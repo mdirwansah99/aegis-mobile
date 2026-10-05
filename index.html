@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#080c16">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AegisMobile">
+  <link rel="manifest" href="manifest.json">
+  <title>AegisMobile - Mobile Cyber Defense & Booster</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand-wrap">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">AegisMobile Pro</h1>
+        <p class="brand-subtitle">Pertahanan & Penggalak Telefon Pintar</p>
+      </div>
+    </div>
+    <button class="btn-install" id="installBtn">+ PASANG APP</button>
+  </header>
+
+  <div class="container">
+    <!-- ========================================== -->
+    <!-- TAB 1: DASHBOARD UTAMA                     -->
+    <!-- ========================================== -->
+    <div id="tab-dashboard" class="tab-content active">
+      <!-- Health Meter Card -->
+      <div class="meter-card">
+        <div class="meter-circle" id="meterCircle">
+          <span class="meter-score" id="healthScore">98%</span>
+          <span class="meter-score-label">SKOR PERTAHANAN</span>
+        </div>
+        <h2 class="meter-title" id="statusHeading">Telefon Dalam Keadaan Selamat</h2>
+        <p class="meter-desc" id="statusSub">Tiada ancaman siber dikesan. Bersedia untuk dioptimumkan.</p>
+        <button class="btn-boost-master" id="btnMasterBoost">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          1-TAP SMART OPTIMIZE & BOOST
+        </button>
+      </div>
+
+      <!-- Quick Metrics Row -->
+      <div class="metrics-row">
+        <div class="metric-pill">
+          <div class="metric-val" id="ramMetric">Normal</div>
+          <div class="metric-name">Tekanan Memori</div>
+        </div>
+        <div class="metric-pill">
+          <div class="metric-val" id="signalMetric">-- ms</div>
+          <div class="metric-name">Ping Talian</div>
+        </div>
+        <div class="metric-pill">
+          <div class="metric-val" id="threatMetric">0</div>
+          <div class="metric-name">Ancaman Aktif</div>
+        </div>
+      </div>
+
+      <!-- Live Quick Overview Card -->
+      <div class="card">
+        <h3 class="card-title">🛡️ Status Komponen Pertahanan</h3>
+        <p class="card-desc">Beroperasi secara terus di dalam telefon tanpa perlu sambungan ke laptop.</p>
+        <div class="status-grid">
+          <div class="status-badge-item"><span>✅</span> Anti-Phishing SMS/Web</div>
+          <div class="status-badge-item"><span>✅</span> Pengimbas APK SHA-256</div>
+          <div class="status-badge-item"><span>✅</span> Pengesan Gambar Pendua</div>
+          <div class="status-badge-item"><span>✅</span> Game Turbo WakeLock</div>
+          <div class="status-badge-item"><span>✅</span> Penentudalam DNS & Talian</div>
+          <div class="status-badge-item"><span>✅</span> Mod Luar Talian (PWA)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: SEKURITI & ANCAMAN SIBER           -->
+    <!-- ========================================== -->
+    <div id="tab-security" class="tab-content">
+      <!-- Phishing & Scam Link Verifier -->
+      <div class="card">
+        <h3 class="card-title">🔗 Pengesah Pautan Scam / Phishing</h3>
+        <p class="card-desc">Terima pautan mencurigakan melalui SMS, Telegram atau WhatsApp? Tampal pautan di bawah untuk memeriksa risiko penipuan.</p>
+        <input type="url" class="input-field" id="phishInput" placeholder="Contoh: https://directyp.org/ atau pautan bank...">
+        <button class="btn-action" id="btnCheckPhish">Imbas Keselamatan Pautan</button>
+        <div class="log-box" id="phishLogBox"></div>
+      </div>
+
+      <!-- SMS / WhatsApp Text Scam Inspector -->
+      <div class="card">
+        <h3 class="card-title">💬 Pengimbas Mesej SMS & WhatsApp Scam</h3>
+        <p class="card-desc">Tampal teks mesej yang mendakwa daripada LHDN, MySejahtera, Bank, Polis, atau kurier bungkusan untuk mengesan skrip penipuan siber.</p>
+        <textarea class="input-field" id="smsInput" rows="3" placeholder="Tampal teks mesej di sini... (cth: 'Akaun anda telah disekat, sila klik...')"></textarea>
+        <button class="btn-action" id="btnCheckSms">Imbas Teks Mesej</button>
+        <div class="log-box" id="smsLogBox"></div>
+      </div>
+
+      <!-- APK Malware Inspector -->
+      <div class="card">
+        <h3 class="card-title">📦 Pengimbas Fail APK & Dokumen</h3>
+        <p class="card-desc">Pilih fail APK atau dokumen yang dimuat turun. Enjin mengira tandatangan SHA-256 dan mengesan penyamaran fail tanpa menghantar data keluar dari telefon.</p>
+        <label class="file-zone" for="apkFileInput">
+          <div class="file-zone-icon">📁</div>
+          <div style="font-size:13px; font-weight:600; color:var(--accent-cyan);">Pilih Fail APK / Dokumen</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">100% diproses terus dalam cip telefon anda</div>
+        </label>
+        <input type="file" id="apkFileInput" style="display:none;">
+        <div class="log-box" id="apkLogBox"></div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: CUCI SAMPAH & GAMBAR PENDUA        -->
+    <!-- ========================================== -->
+    <div id="tab-cleaner" class="tab-content">
+      <!-- Duplicate Photos Finder -->
+      <div class="card">
+        <h3 class="card-title">🖼️ Pengesan Gambar Pendua (Media Deduplicator)</h3>
+        <p class="card-desc">Pilih sekumpulan gambar daripada galeri telefon anda. Enjin ini membandingkan tandatangan digital (hash) dan menyusun gambar yang serupa untuk dijimatkan ruang storan.</p>
+        <label class="file-zone" for="dupFileInput">
+          <div class="file-zone-icon">📸</div>
+          <div style="font-size:13px; font-weight:600; color:var(--accent-amber);">Pilih Gambar Galeri Telefon</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Pilih 2 atau lebih keping gambar untuk perbandingan hash pintar</div>
+        </label>
+        <input type="file" id="dupFileInput" multiple accept="image/*" style="display:none;">
+        <div class="log-box" id="dupLogBox"></div>
+        <div id="dupPreviewContainer" class="dup-preview-grid"></div>
+      </div>
+
+      <!-- Cache & Temporary Storage Cleaner -->
+      <div class="card">
+        <h3 class="card-title">🧹 Pembersih Cache & Penimbal Pelayar</h3>
+        <p class="card-desc">Padamkan data sisa cache pelayar, pangkalan data IndexedDB sementara dan fail penimbal telefon yang memakan ruang.</p>
+        <button class="btn-action btn-danger" id="btnClearCache">Cuci Cache & Sisa Sementara Sekarang</button>
+        <div class="log-box" id="cacheLogBox"></div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 4: RAM BOOSTER & GAME TURBO            -->
+    <!-- ========================================== -->
+    <div id="tab-booster" class="tab-content">
+      <!-- Game Turbo WakeLock Card -->
+      <div class="card">
+        <h3 class="card-title">🎮 Game Turbo & Kunci Skrin (Wake-Lock)</h3>
+        <p class="card-desc">Menghalang skrin telefon daripada malap atau terkunci secara automatik semasa anda sedang bermain permainan mudah alih (MLBB, PUBG, Genshin, dsb).</p>
+        <div class="toggle-row">
+          <span style="font-size:13px; font-weight:600;">Status Kunci Skrin Permainan:</span>
+          <button class="btn-toggle" id="btnToggleWakeLock">MATI</button>
+        </div>
+        <div class="log-box" id="wakeLockLogBox"></div>
+      </div>
+
+      <!-- RAM Pressure Relief Booster -->
+      <div class="card">
+        <h3 class="card-title">🚀 Penggalak Memori (RAM Pressure Relief)</h3>
+        <p class="card-desc">Telefon terasa lambat atau panas? Modul ini mencetuskan kitaran pelepasan memori (Garbage Collection Trigger) untuk memaksa sistem membebaskan memori yang terperangkap pada aplikasi latar belakang.</p>
+        <button class="btn-boost-master" id="btnRunRamBoost">
+          Mula Penggalak RAM Telefon Sekarang
+        </button>
+        <div class="log-box" id="ramLogBox"></div>
+      </div>
+
+      <!-- Live FPS & Refresh Rate Benchmarker -->
+      <div class="card">
+        <h3 class="card-title">⚡ Penguji Kadar Segar Skrin (Live FPS)</h3>
+        <p class="card-desc">Uji kelancaran skrin peranti anda dalam masa nyata.</p>
+        <div style="display:flex; align-items:baseline; gap:8px; margin: 10px 0;">
+          <span id="liveFpsVal" style="font-size:32px; font-weight:800; color:var(--accent-cyan);">--</span>
+          <span style="font-size:13px; color:var(--text-muted);">FPS (Kadar Bingkai Sesaat)</span>
+        </div>
+        <button class="btn-action" id="btnStartFpsTest">Mulakan Ujian Kelancaran Skrin</button>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- TAB 5: ISYARAT & RANGKAIAN (SIGNAL BOOST)  -->
+    <!-- ========================================== -->
+    <div id="tab-signal" class="tab-content">
+      <!-- Live Connection Telemetry -->
+      <div class="card">
+        <h3 class="card-title">📶 Telemetri Talian & Sambungan Telefon</h3>
+        <p class="card-desc">Status sambungan masa-nyata daripada cip modem telefon anda.</p>
+        
+        <div class="signal-info-grid">
+          <div class="signal-metric-box">
+            <div class="signal-metric-num" id="sigNetType">--</div>
+            <div class="signal-metric-lbl">Jenis Talian</div>
+          </div>
+          <div class="signal-metric-box">
+            <div class="signal-metric-num" id="sigDownlink">-- Mbps</div>
+            <div class="signal-metric-lbl">Kelajuan Muat Turun</div>
+          </div>
+          <div class="signal-metric-box">
+            <div class="signal-metric-num" id="sigRtt">-- ms</div>
+            <div class="signal-metric-lbl">Kependaman RTT</div>
+          </div>
+        </div>
+
+        <button class="btn-action" id="btnRefreshSignalInfo">Kemaskini Telemetri Talian</button>
+      </div>
+
+      <!-- Baseband Re-Handshake / Signal Refresh -->
+      <div class="card">
+        <h3 class="card-title">🔄 Pengoptimum Sambungan Menara Pemancar</h3>
+        <p class="card-desc">Jika isyarat telefon lemah atau data internet tersekat, enjin ini mengosongkan soket penimbal rangkaian dan mencetuskan kitaran penyelarasan semula (*re-negotiation*) ke menara telekomunikasi (BTS) terdekat.</p>
+        <button class="btn-boost-master" id="btnCalibrateSignal">
+          ⚡ Kalibrasi & Segarkan Isyarat Talian
+        </button>
+        <div class="log-box" id="signalCalibrateLogBox"></div>
+      </div>
+
+      <!-- DNS Latency Benchmark -->
+      <div class="card">
+        <h3 class="card-title">⚡ Penanda Aras Kependaman DNS Terpantas</h3>
+        <p class="card-desc">Uji kependaman (*ping*) ke pelayan DNS global terkemuka untuk mengenal pasti laluan internet paling lancar.</p>
+        <button class="btn-action" id="btnRunDnsPing">Uji Ping DNS Sekarang</button>
+        <div class="log-box" id="dnsLogBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="tab-dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="12 6 12 12 16 14"/></svg>
+      Utama
+    </button>
+    <button class="nav-item" data-tab="tab-security">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Sekuriti
+    </button>
+    <button class="nav-item" data-tab="tab-cleaner">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      Sampah
+    </button>
+    <button class="nav-item" data-tab="tab-booster">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      RAM
+    </button>
+    <button class="nav-item" data-tab="tab-signal">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V4"/></svg>
+      Isyarat
+    </button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
