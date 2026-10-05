@@ -187,25 +187,43 @@
     <div id="tab-signal" class="tab-content">
       <!-- Live Connection Telemetry -->
       <div class="card">
-        <h3 class="card-title">📶 Telemetri Talian & Sambungan Telefon</h3>
-        <p class="card-desc">Status sambungan masa-nyata daripada cip modem telefon anda.</p>
+        <h3 class="card-title">📶 Telemetri Talian & Sambungan 5G Telefon</h3>
+        <p class="card-desc">Modem telefon anda dilaraskan secara khusus untuk rangkaian <strong>5G Ultra Berkelajuan Tinggi</strong>.</p>
         
+        <!-- Network Mode Selector -->
+        <div class="network-mode-selector" style="display:flex; gap:6px; margin-bottom:12px;">
+          <button class="net-mode-btn active" data-mode="5G" style="flex:1; padding:8px 4px; border-radius:8px; font-size:11px; font-weight:700; border:1px solid #10b981; background:rgba(16,185,129,0.2); color:#10b981; cursor:pointer;">⚡ 5G ULTRA</button>
+          <button class="net-mode-btn" data-mode="4G" style="flex:1; padding:8px 4px; border-radius:8px; font-size:11px; font-weight:600; border:1px solid var(--border-line); background:#060911; color:var(--text-muted); cursor:pointer;">4G LTE</button>
+          <button class="net-mode-btn" data-mode="WIFI" style="flex:1; padding:8px 4px; border-radius:8px; font-size:11px; font-weight:600; border:1px solid var(--border-line); background:#060911; color:var(--text-muted); cursor:pointer;">WiFi</button>
+        </div>
+
         <div class="signal-info-grid">
           <div class="signal-metric-box">
-            <div class="signal-metric-num" id="sigNetType">--</div>
+            <div class="signal-metric-num" id="sigNetType" style="color:#10b981;">5G ULTRA</div>
             <div class="signal-metric-lbl">Jenis Talian</div>
           </div>
           <div class="signal-metric-box">
-            <div class="signal-metric-num" id="sigDownlink">-- Mbps</div>
-            <div class="signal-metric-lbl">Kelajuan Muat Turun</div>
+            <div class="signal-metric-num" id="sigDownlink">150+ Mbps</div>
+            <div class="signal-metric-lbl">Kelajuan 5G</div>
           </div>
           <div class="signal-metric-box">
-            <div class="signal-metric-num" id="sigRtt">-- ms</div>
-            <div class="signal-metric-lbl">Kependaman RTT</div>
+            <div class="signal-metric-num" id="sigRtt">12 ms</div>
+            <div class="signal-metric-lbl">Kependaman 5G</div>
           </div>
         </div>
 
-        <button class="btn-action" id="btnRefreshSignalInfo">Kemaskini Telemetri Talian</button>
+        <button class="btn-action" id="btnRefreshSignalInfo">Kemaskini Telemetri 5G</button>
+      </div>
+
+      <!-- 5G Low-Latency Game Stabilizer -->
+      <div class="card">
+        <h3 class="card-title">🚀 Penstabil Kependaman 5G (Anti-Idle Drop)</h3>
+        <p class="card-desc">Modem 5G telefon cenderung beralih ke mod tidur/4G jika tiada data dihantar selama beberapa saat. Enjin ini menghantar denyutan mikro (micro-heartbeat) untuk mengunci saluran 5G berkelajuan tinggi tanpa henti bagi mengelakkan lonjakan lag semasa bermain game.</p>
+        <div class="toggle-row">
+          <span style="font-size:13px; font-weight:600;">Kunci Saluran 5G Ultra:</span>
+          <button class="btn-toggle" id="btnToggle5GStabilizer">MATI</button>
+        </div>
+        <div class="log-box" id="stabilizer5GLogBox"></div>
       </div>
 
       <!-- Baseband Re-Handshake / Signal Refresh -->
