@@ -34,6 +34,12 @@
     <!-- TAB 1: DASHBOARD UTAMA                     -->
     <!-- ========================================== -->
     <div id="tab-dashboard" class="tab-content active">
+      <!-- Version & Cache Reset Bar -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:11px;">
+        <span style="color:#10b981; font-weight:700;">🟢 Aegis v2.2 (Edisi 5G Ultra)</span>
+        <button id="btnForceUpdate" style="background:#1e293b; color:#38bdf8; border:1px solid rgba(56,189,248,0.3); border-radius:12px; padding:3px 10px; font-size:10.5px; font-weight:600; cursor:pointer;">🔄 Segarkan Versi</button>
+      </div>
+
       <!-- Health Meter Card -->
       <div class="meter-card">
         <div class="meter-circle" id="meterCircle">
@@ -41,13 +47,27 @@
           <span class="meter-score-label">SKOR PERTAHANAN</span>
         </div>
         <h2 class="meter-title" id="statusHeading">Telefon Dalam Keadaan Selamat</h2>
-        <p class="meter-desc" id="statusSub">Tiada ancaman siber dikesan. Bersedia untuk dioptimumkan.</p>
+        <p class="meter-desc" id="statusSub">Tiada ancaman siber dikesan. Talian 5G dilaras optimum.</p>
         <button class="btn-boost-master" id="btnMasterBoost">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
           1-TAP SMART OPTIMIZE & BOOST
         </button>
+      </div>
+
+      <!-- Pilihan Rangkaian 5G / 4G (Paling Jelas di Dashboard) -->
+      <div class="card" style="border: 1.5px solid #10b981; background: linear-gradient(180deg, rgba(16,185,129,0.14), rgba(15,23,42,0.95)); margin-bottom: 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h3 class="card-title" style="color:#10b981; margin:0;">📶 Mod Rangkaian Pilihan</h3>
+          <span id="badgeActiveNet" style="background:#10b981; color:#022c22; font-size:10px; font-weight:800; padding:2px 8px; border-radius:10px;">5G ULTRA AKTIF</span>
+        </div>
+        <p class="card-desc" style="margin-bottom:10px;">Tekan pilihan rangkaian anda di bawah untuk mengunci frekuensi isyarat:</p>
+        <div class="network-mode-selector" style="display:flex; gap:6px;">
+          <button class="net-mode-btn active" data-mode="5G" style="flex:1; padding:9px 4px; border-radius:10px; font-size:11.5px; font-weight:700; border:1.5px solid #10b981; background:rgba(16,185,129,0.25); color:#10b981; cursor:pointer;">⚡ 5G ULTRA</button>
+          <button class="net-mode-btn" data-mode="4G" style="flex:1; padding:9px 4px; border-radius:10px; font-size:11.5px; font-weight:600; border:1px solid var(--border-line); background:#060911; color:var(--text-muted); cursor:pointer;">4G LTE</button>
+          <button class="net-mode-btn" data-mode="WIFI" style="flex:1; padding:9px 4px; border-radius:10px; font-size:11.5px; font-weight:600; border:1px solid var(--border-line); background:#060911; color:var(--text-muted); cursor:pointer;">WiFi</button>
+        </div>
       </div>
 
       <!-- Quick Metrics Row -->
@@ -266,7 +286,7 @@
     </button>
     <button class="nav-item" data-tab="tab-signal">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V4"/></svg>
-      Isyarat
+      Isyarat 5G
     </button>
   </nav>
 
