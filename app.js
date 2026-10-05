@@ -622,40 +622,99 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- 12. 5G Network Mode Switcher ---
   const netModeBtns = document.querySelectorAll('.net-mode-btn');
-  netModeBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      netModeBtns.forEach((b) => {
+  const badgeActiveNet = document.getElementById('badgeActiveNet');
+
+  function applyNetworkMode(mode) {
+    currentNetMode = mode;
+    localStorage.setItem('aegis_net_mode', mode);
+
+    netModeBtns.forEach((b) => {
+      const bMode = b.getAttribute('data-mode');
+      if (bMode === mode) {
+        b.classList.add('active');
+        if (mode === '5G') {
+          b.style.borderColor = '#10b981';
+          b.style.background = 'rgba(16, 185, 129, 0.25)';
+          b.style.color = '#10b981';
+          b.style.fontWeight = '700';
+          b.textContent = '⚡ 5G ULTRA';
+        } else if (mode === '4G') {
+          b.style.borderColor = '#38bdf8';
+          b.style.background = 'rgba(56, 189, 248, 0.25)';
+          b.style.color = '#38bdf8';
+          b.style.fontWeight = '700';
+          b.textContent = '4G LTE';
+        } else {
+          b.style.borderColor = '#f59e0b';
+          b.style.background = 'rgba(245, 158, 11, 0.25)';
+          b.style.color = '#f59e0b';
+          b.style.fontWeight = '700';
+          b.textContent = 'WiFi';
+        }
+      } else {
         b.classList.remove('active');
         b.style.borderColor = 'var(--border-line)';
         b.style.background = '#060911';
         b.style.color = 'var(--text-muted)';
         b.style.fontWeight = '600';
-      });
-
-      btn.classList.add('active');
-      const mode = btn.getAttribute('data-mode');
-      currentNetMode = mode;
-
-      if (mode === '5G') {
-        btn.style.borderColor = '#10b981';
-        btn.style.background = 'rgba(16, 185, 129, 0.2)';
-        btn.style.color = '#10b981';
-        btn.style.fontWeight = '700';
-      } else if (mode === '4G') {
-        btn.style.borderColor = '#38bdf8';
-        btn.style.background = 'rgba(56, 189, 248, 0.2)';
-        btn.style.color = '#38bdf8';
-        btn.style.fontWeight = '700';
-      } else {
-        btn.style.borderColor = '#f59e0b';
-        btn.style.background = 'rgba(245, 158, 11, 0.2)';
-        btn.style.color = '#f59e0b';
-        btn.style.fontWeight = '700';
       }
+    });
 
-      updateNetworkTelemetry();
+    if (badgeActiveNet) {
+      if (mode === '5G') {
+        badgeActiveNet.textContent = '5G ULTRA AKTIF';
+        badgeActiveNet.style.background = '#10b981';
+        badgeActiveNet.style.color = '#022c22';
+      } else if (mode === '4G') {
+        badgeActiveNet.textContent = '4G LTE AKTIF';
+        badgeActiveNet.style.background = '#38bdf8';
+        badgeActiveNet.style.color = '#0c4a6e';
+      } else {
+        badgeActiveNet.textContent = 'WIFI AKTIF';
+        badgeActiveNet.style.background = '#f59e0b';
+        badgeActiveNet.style.color = '#451a03';
+      }
+    }
+
+    updateNetworkTelemetry();
+  }
+
+  // Restore saved network mode or default to 5G
+  const savedMode = localStorage.getItem('aegis_net_mode') || '5G';
+  applyNetworkMode(savedMode);
+
+  netModeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.getAttribute('data-mode');
+      applyNetworkMode(mode);
     });
   });
+
+  // Force Update / Cache Reset button
+  const btnForceUpdate = document.getElementById('btnForceUpdate');
+  if (btnForceUpdate) {
+    btnForceUpdate.addEventListener('click', async () => {
+      btnForceUpdate.textContent = '⏳ Mengemaskini...';
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const reg of registrations) {
+            await reg.unregister();
+          }
+        }
+        if (window.caches) {
+          const keys = await caches.keys();
+          for (const key of keys) {
+            await caches.delete(key);
+          }
+        }
+        alert('Aplikasi telah disegarkan ke versi terkini (v2.2 5G Ultra)! Halaman akan dimuatkan semula.');
+        window.location.href = window.location.pathname + '?reload=' + Date.now();
+      } catch (err) {
+        window.location.reload();
+      }
+    });
+  }
 
   // --- 13. 5G Low-Latency Game Stabilizer (Anti-Idle Drop) ---
   const btnToggle5GStabilizer = document.getElementById('btnToggle5GStabilizer');
