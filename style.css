@@ -472,3 +472,67 @@ body {
 .nav-item.active svg {
   stroke: var(--accent-cyan);
 }
+
+
+/* v3.0 Ultimate Additions */
+.badge-v3 {
+  font-size: 9px;
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--accent-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  padding: 1px 6px;
+  border-radius: 6px;
+  letter-spacing: 0.4px;
+  vertical-align: middle;
+}
+
+.btn-mode-switch {
+  background: #1e293b;
+  color: var(--accent-cyan);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 5px 10px;
+  border-radius: 16px;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-mode-switch.soc-active {
+  background: rgba(244, 63, 94, 0.2);
+  color: #fb7185;
+  border-color: rgba(244, 63, 94, 0.5);
+}
+
+.top-bar-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.btn-mini-reset {
+  background: #1e293b;
+  color: var(--accent-cyan);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pill-tag {
+  font-size: 9px;
+  font-weight: 800;
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 7px;
+  border-radius: 8px;
+  letter-spacing: 0.4px;
+}
+
+body:not(.soc-mode) .soc-only {
+  display: none !important;
+}

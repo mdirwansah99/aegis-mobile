@@ -1,11 +1,11 @@
 {
-  "name": "AegisMobile Cyber Defense & Booster",
-  "short_name": "AegisMobile",
-  "description": "Perisai keselamatan telefon pintar, penggalak RAM dan pembersih storan pantas.",
+  "name": "AegisMobile Ultimate v3.0 — Perisai Siber & Forensik",
+  "short_name": "AegisUltimate",
+  "description": "Perisai pertahanan siber mudah alih (PERISAI Standard): Pembedah binari APK, Anti-Phishing DoH, Pengimbas QR Hasad, Audit Kebocoran k-Anonymity, dan Pengoptimum Rangkaian.",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0b0f19",
-  "theme_color": "#0b0f19",
+  "background_color": "#080c16",
+  "theme_color": "#080c16",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -20,5 +20,15 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }

@@ -1,5 +1,5 @@
-// AegisMobile Pro - Service Worker (v3 - 5G Ultra Edition)
-const CACHE_NAME = 'aegis-mobile-v3-5g';
+// AegisMobile Ultimate v3.0 (PERISAI Standard) - Offline-First Service Worker
+const CACHE_NAME = 'aegis-ultimate-v3.0';
 const ASSETS = [
   './',
   './index.html',
@@ -32,12 +32,14 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Network-First strategy: Always get latest version when online, offline fallback
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
+        if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
