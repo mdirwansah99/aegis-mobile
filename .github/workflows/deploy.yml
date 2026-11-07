@@ -1,4 +1,4 @@
-name: Deploy AegisMobile Pro to GitHub Pages
+name: Deploy AegisMobile Ultimate (PERISAI Hardened + SRI Gate)
 
 on:
   push:
@@ -21,14 +21,47 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: PERISAI Supply-Chain Security Audit & SRI Lock
+        run: |
+          set -euo pipefail
+          echo "[1/4] Verifying JS syntax..."
+          node --check app.js
+          node --check sw.js
+
+          echo "[2/4] Scanning for forbidden supply-chain injection patterns..."
+          if grep -E -i "(eval\s*\(|new\s+Function\s*\(|<script[^>]+src=['\"]https?:)" index.html app.js sw.js; then
+            echo "CRITICAL SECURITY ALERT: Unauthorized dynamic code execution or external script detected!"
+            exit 1
+          fi
+
+          if ! grep -q "Content-Security-Policy" index.html; then
+            echo "CRITICAL SECURITY ALERT: Content-Security-Policy header missing from index.html!"
+            exit 1
+          fi
+
+          echo "[3/4] Computing SHA-384 Subresource Integrity (SRI) digests..."
+          CSS_SRI="sha384-$(openssl dgst -sha384 -binary style.css | openssl base64 -A)"
+          JS_SRI="sha384-$(openssl dgst -sha384 -binary app.js | openssl base64 -A)"
+          echo "  style.css -> $CSS_SRI"
+          echo "  app.js    -> $JS_SRI"
+
+          sed -i "s|<link rel=\"stylesheet\" href=\"style.css\">|<link rel=\"stylesheet\" href=\"style.css\" integrity=\"$CSS_SRI\" crossorigin=\"anonymous\">|g" index.html
+          sed -i "s|<script src=\"app.js\"></script>|<script src=\"app.js\" integrity=\"$JS_SRI\" crossorigin=\"anonymous\"></script>|g" index.html
+
+          echo "[4/4] Stripping internal git/workflow metadata from public artifact..."
+          rm -rf .git .github Tolak_Ke_GitHub.bat
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
-      - name: Upload artifact
+
+      - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
