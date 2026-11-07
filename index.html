@@ -39,7 +39,7 @@
     <!-- ========================================== -->
     <div id="tab-dashboard" class="tab-content active">
       <div class="top-bar-status">
-        <span id="ed25519Status" style="color:#10b981; font-weight:700;">🔒 Enjin Bloom + Ed25519 Aktif</span>
+        <span id="ed25519Status" style="color:#10b981; font-weight:700;">🔒 Enjin Bloom + SHA-256 Aktif</span>
         <button id="btnForceUpdate" class="btn-mini-reset">🔄 Kemaskini</button>
       </div>
 
@@ -80,7 +80,7 @@
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <h3 class="card-title" style="margin:0;">🛡️ Pangkalan Data Ancaman Tempatan (Offline-First)</h3>
-          <span class="pill-tag" id="feedSignBadge">TERSAH Ed25519</span>
+          <span class="pill-tag" id="feedSignBadge">TERSAH SHA-256</span>
         </div>
         <p class="card-desc">Berfungsi 100% tanpa internet menggunakan penapis Bloom padat & heuristik trojan tempatan.</p>
         <div class="status-grid">
@@ -91,6 +91,23 @@
           <div class="status-badge-item"><span>✅</span> Pengesan Kebocoran WebRTC</div>
           <div class="status-badge-item"><span>✅</span> Eksport Bukti NSRC 997</div>
         </div>
+      </div>
+
+      <!-- WhatsApp & Telegram Anti-Ransomware Emergency Rescue Card -->
+      <div class="card" style="border-color: rgba(244, 63, 94, 0.45);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <h3 class="card-title" style="margin:0; color:#fb7185;">🚨 Perisai WhatsApp & Telegram (Anti-Ransomware)</h3>
+          <span class="pill-tag" style="background:rgba(244,63,94,0.18); color:#fb7185;">MITRE T1486</span>
+        </div>
+        <p class="card-desc">Tertekan link mencurigakan atau terima fail <code>.apk</code> (Jemputan Kahwin / Resit / Video) di WhatsApp atau Telegram? Tekan butang penyelamat di bawah serta-merta.</p>
+        <button class="btn-action btn-danger" id="btnEmergencyRescue" style="margin-top:4px; font-weight:800;">
+          🚨 SAYA TERTEKAN LINK BAHAYA! (MOD PENYELAMAT 1-TAP)
+        </button>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="btn-action" id="btnCopyQuad9Dns" style="margin-top:0; flex:1;">🛡️ Salin DNS Sekat Link (Quad9)</button>
+          <button class="btn-action" id="btnScanDownloadsNow" style="margin-top:0; flex:1;">📂 Bedah Fail Downloads</button>
+        </div>
+        <div class="log-box" id="emergencyLogBox"></div>
       </div>
 
       <!-- Forensic Evidence Quick Exporter -->

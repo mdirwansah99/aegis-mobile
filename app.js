@@ -94,9 +94,22 @@ document.addEventListener('DOMContentLoaded', () => {
     'mysejahtera-bantuan.top', 'lhdn-refund.click', 'jpj-saman-online.xyz',
     'poslaju-parcel.top', 'padu-bantuan.xyz', 'kwsp-akaun3.top'
   ];
+  const KNOWN_MALICIOUS_SET = new Set(KNOWN_MALICIOUS_DOMAINS);
   KNOWN_MALICIOUS_DOMAINS.forEach((d) => threatBloom.add(d));
 
-  // Verify WebCrypto availability & deterministic integrity digest
+  // Two-stage lookup across host and parent domain labels (Stage 1: Bloom -> Stage 2: Exact Set)
+  function isKnownMaliciousDomain(host) {
+    const parts = String(host || '').toLowerCase().split('.').filter(Boolean);
+    for (let i = 0; i < parts.length - 1; i++) {
+      const candidate = parts.slice(i).join('.');
+      if (threatBloom.has(candidate) && KNOWN_MALICIOUS_SET.has(candidate)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Verify WebCrypto availability & deterministic SHA-256 feed integrity digest
   async function verifyEngineIntegrity() {
     const badge = document.getElementById('feedSignBadge');
     const topStatus = document.getElementById('ed25519Status');
@@ -104,8 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const enc = new TextEncoder().encode(KNOWN_MALICIOUS_DOMAINS.join('|'));
       const digest = await crypto.subtle.digest('SHA-256', enc);
       const hex = Array.from(new Uint8Array(digest)).slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join('');
-      if (badge) badge.textContent = `BLOOM SIG: ${hex.toUpperCase()}`;
-      if (topStatus) topStatus.textContent = `🔒 Enjin PERISAI v3.0 Aktif (Sig: ${hex})`;
+      if (badge) badge.textContent = `SHA-256: ${hex.toUpperCase()}`;
+      if (topStatus) topStatus.textContent = `🔒 Enjin PERISAI v3.0 Aktif (SHA-256: ${hex})`;
       return true;
     } catch (_) {
       return false;
@@ -390,22 +403,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Parse ZIP Local File Headers to inspect APK internal files & decompress AndroidManifest.xml
+  // Parse ZIP Central Directory & Local File Headers to inspect APK files (supports Bit-3 streaming ZIPs)
   async function parseZipAndManifest(uint8) {
     const view = new DataView(uint8.buffer, uint8.byteOffset, uint8.byteLength);
     const entries = [];
+    const cdMeta = new Map();
     let extractedText = '';
-    let offset = 0;
-    const maxOffset = Math.min(uint8.length - 30, 8 * 1024 * 1024);
 
-    while (offset < maxOffset && entries.length < 250) {
-      // Check Local File Header signature 0x04034b50 ('PK\x03\x04')
+    // 1. Scan ZIP Central Directory (0x02014b50) from tail to resolve real compSize when Bit-3 is set
+    const cdScanStart = Math.max(0, uint8.length - 512 * 1024);
+    for (let pos = cdScanStart; pos <= uint8.length - 46; pos++) {
+      if (view.getUint32(pos, true) !== 0x02014b50) continue;
+      const compression = view.getUint16(pos + 10, true);
+      const compSize = view.getUint32(pos + 20, true);
+      const fileNameLen = view.getUint16(pos + 28, true);
+      const extraLen = view.getUint16(pos + 30, true);
+      const commentLen = view.getUint16(pos + 32, true);
+      const localHeaderOffset = view.getUint32(pos + 42, true);
+      if (fileNameLen > 0 && fileNameLen <= 512 && pos + 46 + fileNameLen <= uint8.length) {
+        const name = new TextDecoder('utf-8', { fatal: false }).decode(uint8.subarray(pos + 46, pos + 46 + fileNameLen));
+        cdMeta.set(localHeaderOffset, { name, compression, compSize });
+        pos += 45 + fileNameLen + extraLen + commentLen;
+      }
+    }
+
+    // 2. Scan Local File Headers (0x04034b50)
+    let offset = 0;
+    const maxOffset = Math.min(uint8.length - 30, 16 * 1024 * 1024);
+
+    while (offset < maxOffset && entries.length < 300) {
       if (view.getUint32(offset, true) !== 0x04034b50) {
         offset++;
         continue;
       }
-      const compression = view.getUint16(offset + 8, true);
-      const compSize = view.getUint32(offset + 18, true);
+      const cd = cdMeta.get(offset);
+      const compression = view.getUint16(offset + 8, true) || (cd ? cd.compression : 0);
+      const compSize = view.getUint32(offset + 18, true) || (cd ? cd.compSize : 0);
       const fileNameLen = view.getUint16(offset + 26, true);
       const extraLen = view.getUint16(offset + 28, true);
 
@@ -419,7 +452,8 @@ document.addEventListener('DOMContentLoaded', () => {
       entries.push(fileName);
 
       const dataStart = offset + 30 + fileNameLen + extraLen;
-      const safeCompSize = Math.min(compSize, Math.max(0, uint8.length - dataStart));
+      const fallbackLen = compSize > 0 ? compSize : Math.min(256 * 1024, Math.max(0, uint8.length - dataStart));
+      const safeCompSize = Math.min(fallbackLen, Math.max(0, uint8.length - dataStart));
 
       // Decompress AndroidManifest.xml or scan classes.dex header
       if (
@@ -435,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
       offset = dataStart + (compSize > 0 ? compSize : 1);
     }
 
-    // Fallback: also scan raw buffer strings in case Data Descriptor bit 3 was used (compSize=0 in local header)
+    // Fallback: also scan raw buffer strings
     extractedText += '\n' + extractBinaryStrings(uint8, 6);
     return { entries, extractedText };
   }
@@ -498,12 +532,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
           const PERM_RULES = [
             { id: 'BIND_ACCESSIBILITY_SERVICE', weight: 50, label: 'BIND_ACCESSIBILITY_SERVICE (Kawalan Skrin Automatik / Curi Bank)' },
+            { id: 'BIND_NOTIFICATION_LISTENER_SERVICE', weight: 45, label: 'BIND_NOTIFICATION_LISTENER_SERVICE (Pintas Notifikasi Push TAC / Bank)' },
+            { id: 'MANAGE_EXTERNAL_STORAGE', weight: 45, label: 'MANAGE_EXTERNAL_STORAGE (Akses Penuh Semua Fail — Risiko Penyulitan Ransomware)' },
+            { id: 'WRITE_EXTERNAL_STORAGE', weight: 25, label: 'WRITE_EXTERNAL_STORAGE (Ubah / Sulitkan Gambar & Dokumen Storan)' },
             { id: 'RECEIVE_SMS', weight: 35, label: 'RECEIVE_SMS (Pintas SMS TAC / OTP Bank)' },
             { id: 'READ_SMS', weight: 35, label: 'READ_SMS (Baca Mesej OTP Perbankan)' },
             { id: 'SEND_SMS', weight: 30, label: 'SEND_SMS (Hantar SMS Tanpa Pengetahuan)' },
             { id: 'SYSTEM_ALERT_WINDOW', weight: 30, label: 'SYSTEM_ALERT_WINDOW (Lapisan Skrin Palsu / Phishing Overlay)' },
-            { id: 'BIND_DEVICE_ADMIN', weight: 40, label: 'BIND_DEVICE_ADMIN (Kunci Peranti / Halang Uninstall)' },
+            { id: 'BIND_DEVICE_ADMIN', weight: 40, label: 'BIND_DEVICE_ADMIN (Kunci Peranti / Tukar PIN / Halang Uninstall)' },
             { id: 'REQUEST_INSTALL_PACKAGES', weight: 25, label: 'REQUEST_INSTALL_PACKAGES (Pemasang Dropper Sekunder)' },
+            { id: 'REQUEST_DELETE_PACKAGES', weight: 25, label: 'REQUEST_DELETE_PACKAGES (Padam Aplikasi Keselamatan)' },
+            { id: 'READ_CALL_LOG', weight: 20, label: 'READ_CALL_LOG (Intip Log Panggilan OTP Suara)' },
             { id: 'RECORD_AUDIO', weight: 20, label: 'RECORD_AUDIO (Rakaman Mikrofon Rahsia)' }
           ];
 
@@ -516,11 +555,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
           // Toxic Banking Trojan Combination Rule (PERISAI Standard)
           const hasAccess = upperText.includes('BIND_ACCESSIBILITY_SERVICE');
+          const hasNotif = upperText.includes('BIND_NOTIFICATION_LISTENER_SERVICE');
           const hasSms = upperText.includes('RECEIVE_SMS') || upperText.includes('READ_SMS');
           const hasOverlay = upperText.includes('SYSTEM_ALERT_WINDOW');
-          if (hasAccess && (hasSms || hasOverlay)) {
+          const hasDropper = upperText.includes('REQUEST_INSTALL_PACKAGES');
+          if ((hasAccess && (hasSms || hasOverlay || hasNotif || hasDropper)) || (hasNotif && (hasSms || hasOverlay || hasDropper))) {
             riskScore = Math.max(riskScore, 95);
-            findings.unshift('🛑 KOMBINASI MAUT TROJAN PERBANKAN DIKESAN: Accessibility + SMS/Overlay! Jangan pasang APK ini!');
+            findings.unshift('🛑 KOMBINASI MAUT TROJAN PERBANKAN DIKESAN: Accessibility/NotifListener + SMS/Overlay/Dropper! Jangan pasang APK ini!');
+          }
+
+          // Mobile Ransomware & Screen-Locker Signature (MITRE T1486 / T1446)
+          const hasDeviceAdmin = upperText.includes('BIND_DEVICE_ADMIN');
+          const hasStorageWrite = upperText.includes('MANAGE_EXTERNAL_STORAGE') || upperText.includes('WRITE_EXTERNAL_STORAGE');
+          const hasRansomCrypto = /javax\/crypto\/Cipher|AES\/CBC|resetPassword|lockNow|\.locked|\.encrypted|ransom/i.test(extractedText);
+          if ((hasDeviceAdmin && (hasStorageWrite || hasOverlay || hasRansomCrypto)) || (hasStorageWrite && hasRansomCrypto && (hasOverlay || hasAccess))) {
+            riskScore = 100;
+            findings.unshift('🛑 RANSOMWARE MUDAH ALIH DIKESAN: Cuba mengunci skrin telefon (Device Admin) & menyulitkan gambar/dokumen anda! PADAM SERTA-MERTA!');
           }
 
           // Detect Telegram Bot C2 or ngrok tunnels inside DEX/APK
@@ -573,6 +623,39 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCheckPhish = document.getElementById('btnCheckPhish');
   const phishLogBox = document.getElementById('phishLogBox');
 
+  const OFFICIAL_BRANDS = [
+    { kw: 'maybank', official: ['maybank2u.com.my', 'maybank.com'] },
+    { kw: 'm2u', official: ['maybank2u.com.my', 'maybank.com'] },
+    { kw: 'cimb', official: ['cimbclicks.com.my', 'cimb.com.my', 'cimb.com'] },
+    { kw: 'pbebank', official: ['pbebank.com'] },
+    { kw: 'publicbank', official: ['pbebank.com'] },
+    { kw: 'hlb', official: ['hlb.com.my'] },
+    { kw: 'hongleong', official: ['hlb.com.my'] },
+    { kw: 'ambank', official: ['ambank.com.my', 'ambankgroup.com'] },
+    { kw: 'bsn', official: ['mybsn.com.my', 'bsn.com.my'] },
+    { kw: 'bankrakyat', official: ['irakyat.com.my', 'bankrakyat.com.my'] },
+    { kw: 'touchngo', official: ['touchngo.com.my'] },
+    { kw: 'tngdigital', official: ['tngdigital.com.my'] },
+    { kw: 'tng-ewallet', official: ['touchngo.com.my', 'tngdigital.com.my'] },
+    { kw: 'lhdn', official: ['hasil.gov.my'] },
+    { kw: 'mysejahtera', official: ['mysejahtera.malaysia.gov.my'] },
+    { kw: 'kwsp', official: ['kwsp.gov.my'] },
+    { kw: 'bankislam', official: ['bankislam.com', 'bankislam.biz'] },
+    { kw: 'rhb', official: ['rhbgroup.com'] },
+    { kw: 'poslaju', official: ['pos.com.my'] },
+    { kw: 'jpj', official: ['jpj.gov.my'] },
+    { kw: 'pdrm', official: ['rmp.gov.my'] },
+    { kw: 'padu', official: ['padu.gov.my'] }
+  ];
+
+  const URL_SHORTENERS = new Set([
+    'bit.ly', 'tinyurl.com', 't.co', 'wa.me', 'cutt.ly', 's.id', 'is.gd', 'rb.gy', 'rebrand.ly', 'ow.ly', 'shorturl.at'
+  ]);
+
+  function normalizeLeetspeak(str) {
+    return String(str || '').toLowerCase().replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a').replace(/5/g, 's');
+  }
+
   async function inspectUrlWithDoh(rawInput, targetBox) {
     const rawUrl = (rawInput || '').trim();
     if (!rawUrl) {
@@ -583,18 +666,35 @@ document.addEventListener('DOMContentLoaded', () => {
     targetBox.style.display = 'block';
     targetBox.innerHTML = '<div class="log-item">⏳ Memeriksa Penapis Bloom, Homograf Punycode & Rekod DNS-over-HTTPS...</div>';
 
+    // 0. Intercept Dangerous Non-HTTP Schemes & QR/USSD OTP Hijack Vectors (tel:*21*, javascript:, intent:, data:, sms:)
+    if (/^(javascript|data|vbscript|intent|sms|smsto|mailto):/i.test(rawUrl) || /^tel:\s*(\*|%2a)(21|61|62|67)(\*|%2a)/i.test(rawUrl)) {
+      const verdict = 'BAHAYA KRITIKAL — SKEMA URI / USSD HASAD!';
+      const reason = /^tel:/i.test(rawUrl)
+        ? '🛑 SERANGAN USSD CALL-FORWARDING (*21*/*61*): Cubaan mencuri panggilan OTP suara bank anda!'
+        : `🛑 SKEMA URI BERBAHAYA (${rawUrl.split(':')[0].toLowerCase()}:): Boleh mencetuskan pelaksanaan skrip atau aplikasi tersembunyi!`;
+      recordForensicEvent('URL_PHISH_SCAN', rawUrl.slice(0, 120), verdict, 100, reason, 'T1566');
+      targetBox.innerHTML = `
+        <div class="log-item"><strong>Sasaran URI:</strong> ${escapeHtml(rawUrl.slice(0, 120))}</div>
+        <div class="log-item"><strong>Keputusan:</strong> <span style="color:#f43f5e; font-weight:800;">${escapeHtml(verdict)} (100/100)</span></div>
+        <div class="log-item"><strong>Analisis Forensik:</strong><br>• ${escapeHtml(reason)}</div>
+      `;
+      return;
+    }
+
     try {
       const normalized = /^https?:\/\//i.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
       const urlObj = new URL(normalized);
       const host = urlObj.hostname.toLowerCase();
+      const deLeetHost = normalizeLeetspeak(host);
+      const lowerPath = (urlObj.pathname + urlObj.search).toLowerCase();
 
       let riskScore = 0;
       const reasons = [];
 
-      // 1. Bloom Filter Lookup
-      if (threatBloom.has(host)) {
+      // 1. Two-Stage Bloom Filter + Exact Set Lookup (covers subdomains)
+      if (isKnownMaliciousDomain(host)) {
         riskScore += 85;
-        reasons.push('🛑 Penapis Bloom PERISAI: Domain ini tersenarai dalam pangkalan data scam/phishing aktif!');
+        reasons.push('🛑 Penapis Bloom PERISAI (2-Tahap): Domain/induk ini tersenarai dalam pangkalan data scam/phishing aktif!');
       }
 
       // 2. IDN Homograph / Punycode Attack (xn--)
@@ -609,43 +709,44 @@ document.addEventListener('DOMContentLoaded', () => {
         reasons.push('🚨 PERANGKAP REDIRECT (@): URL menyembunyikan destinasi sebenar selepas simbol @.');
       }
 
-      // 4. Malaysian Institution Impersonation Heuristic
-      const OFFICIAL_BRANDS = [
-        { kw: 'maybank', official: ['maybank2u.com.my', 'maybank.com'] },
-        { kw: 'cimb', official: ['cimbclicks.com.my', 'cimb.com.my'] },
-        { kw: 'touchngo', official: ['touchngo.com.my'] },
-        { kw: 'tngdigital', official: ['tngdigital.com.my'] },
-        { kw: 'lhdn', official: ['hasil.gov.my'] },
-        { kw: 'mysejahtera', official: ['mysejahtera.malaysia.gov.my'] },
-        { kw: 'kwsp', official: ['kwsp.gov.my'] },
-        { kw: 'bankislam', official: ['bankislam.com', 'bankislam.biz'] },
-        { kw: 'rhb', official: ['rhbgroup.com'] }
-      ];
-
+      // 4. Malaysian Institution Impersonation Heuristic (with Leetspeak normalization)
       OFFICIAL_BRANDS.forEach((b) => {
-        if (host.includes(b.kw) && !b.official.some((off) => host === off || host.endsWith('.' + off))) {
+        if ((host.includes(b.kw) || deLeetHost.includes(b.kw)) && !b.official.some((off) => host === off || host.endsWith('.' + off))) {
           riskScore += 80;
-          reasons.push(`🛑 PENYAMARAN JENAMA: Domain menyebut "${b.kw}" tetapi BUKAN domain rasmi (${b.official[0]})!`);
+          reasons.push(`🛑 PENYAMARAN JENAMA: Domain menyerupai "${b.kw.toUpperCase()}" tetapi BUKAN domain rasmi (${b.official[0]})!`);
         }
       });
+
+      // 5. Direct Malware / Sideload Dropper Download (.apk, .exe, .scr, .bat, .dex)
+      if (/\.(apk|exe|scr|bat|cmd|msi|vbs|dex|ps1)(\?|$|#)/i.test(lowerPath)) {
+        riskScore += 75;
+        reasons.push('🛑 MUAT TURUN DROPPER (.APK/.EXE): Pautan ini memuat turun fail boleh laku secara terus di luar gedung rasmi!');
+      }
+
+      // 6. URL Shortener Cloaking Detection
+      if (URL_SHORTENERS.has(host)) {
+        riskScore += 50;
+        reasons.push(`⚠️ PEMENDEK URL (${host}): Menyembunyikan destinasi sebenar. Jangan log masuk perbankan melalui pautan pendek!`);
+      }
 
       const scamWords = [
         'directyp', 'popads', 'adsterra', 'free-money', 'hadiah', 'angpao',
         'login-verify', 'update-account', 'bantuan-rakyat', 'lhdn-cukai',
-        'saman-jpj', 'parcel-claim', 'str-bantuan', 'akaun-disekat', 'tac-verify'
+        'saman-jpj', 'parcel-claim', 'str-bantuan', 'akaun-disekat', 'tac-verify',
+        'secure-portal', 'online-verify', 'batal-transaksi', 'claim-bantuan'
       ];
-      if (scamWords.some((k) => host.includes(k) || urlObj.pathname.toLowerCase().includes(k))) {
+      if (scamWords.some((k) => host.includes(k) || lowerPath.includes(k))) {
         riskScore += 60;
         reasons.push('⚠️ Mengandungi kata kunci umpan scam/phishing berisiko tinggi.');
       }
 
-      const dangerousTlds = ['.xyz', '.top', '.tk', '.click', '.buzz', '.monster', '.loan', '.work', '.gq', '.cf', '.cc', '.icu', '.vip'];
+      const dangerousTlds = ['.xyz', '.top', '.tk', '.click', '.buzz', '.monster', '.loan', '.work', '.gq', '.cf', '.cc', '.icu', '.vip', '.shop', '.sbs', '.cfd'];
       if (dangerousTlds.some((tld) => host.endsWith(tld))) {
         riskScore += 35;
         reasons.push(`⚠️ Menggunakan TLD murah berisiko tinggi (.${host.split('.').pop()}).`);
       }
 
-      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) {
         riskScore += 45;
         reasons.push('⚠️ Menggunakan alamat IP mentah secara terus tanpa nama domain.');
       }
@@ -816,7 +917,13 @@ document.addEventListener('DOMContentLoaded', () => {
         { term: 'lhdn', reason: 'Menyamar sebagai LHDN / tuntutan cukai.' },
         { term: 'mysejahtera', reason: 'Umpan bantuan kredit MySejahtera palsu.' },
         { term: 'tng', reason: 'Menyamar sebagai Touch \'n Go eWallet.' },
+        { term: 'maybank', reason: 'Menyamar sebagai notifikasi transaksi Maybank.' },
+        { term: 'cimb', reason: 'Menyamar sebagai notifikasi CIMB Clicks.' },
+        { term: 'public bank', reason: 'Menyamar sebagai notifikasi Public Bank.' },
         { term: 'akaun disekat', reason: 'Taktik ugutan panik (Akaun bank disekat/digantung).' },
+        { term: 'dibekukan', reason: 'Taktik ugutan akaun bank dibekukan.' },
+        { term: 'batalkan', reason: 'Taktik panik transaksi tidak sah (klik pautan untuk batal).' },
+        { term: 'transaksi rm', reason: 'Umpan amaran tolakan wang / transaksi palsu.' },
         { term: 'tahniah menang', reason: 'Penipuan hadiah wang tunai / cabutan bertuah.' },
         { term: 'bantuan tunai', reason: 'Tuntutan bantuan STR/kerajaan tidak sah.' },
         { term: 'bungkusan', reason: 'Penyamaran kurier bungkusan tersangkut.' },
@@ -824,18 +931,39 @@ document.addEventListener('DOMContentLoaded', () => {
         { term: 'tac', reason: 'Cubaan memancing kod pengesahan TAC.' },
         { term: 'mahkamah', reason: 'Ugutan waran tangkap / mahkamah palsu.' },
         { term: 'pdrm', reason: 'Menyamar sebagai pegawai polis / saman PDRM.' },
-        { term: 'apk', reason: 'Mengarahkan muat turun fail pemasangan .APK luar.' }
+        { term: 'apk', reason: 'Mengarahkan muat turun fail pemasangan .APK luar.' },
+        { term: 'jemputan kahwin', reason: 'Umpan dropper APK/Ransomware menyamar Kad Jemputan Kahwin WhatsApp.' },
+        { term: 'kad jemputan', reason: 'Umpan fail APK berbahaya menyamar kad jemputan digital.' },
+        { term: 'resit bayaran', reason: 'Umpan fail palsu menyamar resit transaksi bank.' },
+        { term: 'gambar anda', reason: 'Taktik ugutan / pancingan klik pautan malware di WhatsApp/Telegram.' },
+        { term: 'video anda', reason: 'Umpan pautan trojan/phishing mencuri akaun Telegram/WhatsApp.' },
+        { term: 'tebusan', reason: 'Ugutan wang tebusan / pemerasan siber (Ransomware).' },
+        { term: 'fail dikunci', reason: 'Ancaman penyulitan fail Ransomware.' }
       ];
 
       const detected = scamPatterns.filter((p) => lower.includes(p.term));
-      const urlMatches = text.match(/https?:\/\/[^\s]+|(?:bit\.ly|t\.co|wa\.me|tinyurl\.com)\/[^\s]+/gi) || [];
+      // Match both full http(s) URLs and bare domains/paths (e.g., maybank2u-batal.xyz/login or bit.ly/xyz)
+      const urlMatches = text.match(/(?:https?:\/\/|[a-z0-9-]+\.(?:xyz|top|tk|click|buzz|monster|loan|work|gq|cf|cc|icu|vip|shop|sbs|cfd|com|net|org|my|ly|co|me|id|gd|gy)(?:\/[^\s]*)?)/gi) || [];
 
-      const risk = Math.min(100, detected.length * 30 + (urlMatches.length > 0 ? 30 : 0));
+      let urlBonus = urlMatches.length > 0 ? 35 : 0;
+      urlMatches.forEach((u) => {
+        const cleanHost = u.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
+        if (isKnownMaliciousDomain(cleanHost) || /\.(xyz|top|tk|click|buzz|icu|vip|sbs)$/i.test(cleanHost)) {
+          urlBonus += 45;
+        }
+        OFFICIAL_BRANDS.forEach((b) => {
+          if (cleanHost.includes(b.kw) && !b.official.some((off) => cleanHost === off || cleanHost.endsWith('.' + off))) {
+            urlBonus += 60;
+          }
+        });
+      });
+
+      const risk = Math.min(100, detected.length * 30 + urlBonus);
       let verdict = 'TIADA SKRIP SCAM DIKESAN';
       let color = '#10b981';
 
       if (risk >= 50) {
-        verdict = 'AMARAN MERAH: SKRIP SCAM / PENIPUAN!';
+        verdict = 'AMARAN MERAH: SKRIP SCAM / RANSOMWARE!';
         color = '#f43f5e';
       } else if (risk > 0) {
         verdict = 'MESEJ MENCURIGAKAN (Waspada)';
@@ -844,10 +972,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       recordForensicEvent('SMS_SCAM_SCAN', text.slice(0, 80), verdict, risk, detected.map((d) => d.term).join(','), 'T1566');
 
+      const rescueGuideHtml = risk >= 50
+        ? `<div class="log-item" style="color:#fda4af; border-left:3px solid #f43f5e; padding-left:8px; margin-top:6px;">
+             <strong>🛡️ LANGKAH PERLINDUNGAN SEGERA (WHATSAPP/TELEGRAM):</strong><br>
+             1. <strong>JANGAN TEKAN</strong> pautan atau muat turun fail <code>.apk</code> dalam mesej ini.<br>
+             2. Jika sudah tertekan pautan: <strong>Matikan Wi-Fi/Data (Airplane Mode)</strong> sekarang & semak folder <code>Downloads/</code>.<br>
+             3. Matikan <em>Install Unknown Apps</em> untuk WhatsApp & Telegram dalam <code>Settings → Apps → Special App Access</code>.
+           </div>`
+        : '';
+
       smsLogBox.innerHTML = `
         <div class="log-item"><strong>Keputusan:</strong> <span style="color:${color}; font-weight:800;">${escapeHtml(verdict)} (${risk}/100)</span></div>
         <div class="log-item"><strong>Taktik Manipulasi:</strong><br>${detected.length ? detected.map((d) => '• ' + escapeHtml(d.reason)).join('<br>') : '• Tiada frasa ugutan/umpan lazim ditemui.'}</div>
         ${urlMatches.length ? `<div class="log-item" style="color:#fbbf24;">⚠️ <strong>Pautan Dikesan Dalam Teks (${urlMatches.length}):</strong> ${urlMatches.map((u) => escapeHtml(u)).join(', ')}</div>` : ''}
+        ${rescueGuideHtml}
       `;
     });
   }
@@ -1331,6 +1469,65 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // ========================================================
+  // 15. WhatsApp & Telegram Anti-Ransomware Emergency Rescue
+  // ========================================================
+  const btnEmergencyRescue = document.getElementById('btnEmergencyRescue');
+  const btnCopyQuad9Dns = document.getElementById('btnCopyQuad9Dns');
+  const btnScanDownloadsNow = document.getElementById('btnScanDownloadsNow');
+  const emergencyLogBox = document.getElementById('emergencyLogBox');
+
+  if (btnEmergencyRescue) {
+    btnEmergencyRescue.addEventListener('click', () => {
+      try {
+        sessionStorage.clear();
+      } catch (_) {}
+
+      recordForensicEvent('EMERGENCY_RESCUE_TRIGGERED', 'WhatsApp/Telegram Incident', 'MOD PENYELAMAT AKTIF', 90, 'Sesi pelayar dibersihkan & protokol kuarantin pengguna dipaparkan', 'T1486');
+
+      if (emergencyLogBox) {
+        emergencyLogBox.style.display = 'block';
+        emergencyLogBox.innerHTML = `
+          <div class="log-item" style="color:#fb7185; font-weight:800;">🚨 PROTOKOL PENYELAMAT RANSOMWARE AKTIF (Sesi Sementara Dibersihkan):</div>
+          <div class="log-item"><strong>1. PUTUSKAN INTERNET SEKARANG:</strong> Hidupkan <strong>Airplane Mode</strong> (atau matikan Wi-Fi & Data) selama 2 minit supaya malware gagal menghantar kunci penyulitan / OTP ke pelayan penggodam.</div>
+          <div class="log-item"><strong>2. JANGAN BUKA FAIL .APK:</strong> Jika ada fail seperti <code>Jemputan_Kahwin.apk</code> atau <code>Resit.apk</code> dalam <code>Downloads/</code>, <strong>JANGAN PASANG</strong>. Tekan butang <strong>📂 Bedah Fail Downloads</strong> di atas untuk mengesahkan.</div>
+          <div class="log-item"><strong>3. KUNCI WHATSAPP & TELEGRAM:</strong> Buka <code>Settings → Apps → Special App Access → Install Unknown Apps</code> → Set WhatsApp, Telegram & Chrome kepada <strong>Not Allowed (Mati)</strong>.</div>
+          <div class="log-item"><strong>4. JIKA TERPASANG / SKRIN TERKUNCI:</strong> Tekan lama butang <em>Power</em> → Tekan lama ikon <em>Power Off</em> pada skrin → Masuk <strong>Safe Mode</strong> → Buka <code>Settings → Security → Device Admin Apps</code> (matikan akses) → <strong>Uninstall</strong> aplikasi asing tersebut.</div>
+        `;
+      }
+    });
+  }
+
+  if (btnCopyQuad9Dns) {
+    btnCopyQuad9Dns.addEventListener('click', async () => {
+      const dnsHost = 'dns.quad9.net';
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(dnsHost);
+        }
+      } catch (_) {}
+      if (emergencyLogBox) {
+        emergencyLogBox.style.display = 'block';
+        emergencyLogBox.innerHTML = `
+          <div class="log-item" style="color:#10b981; font-weight:800;">✅ Disalin: <code>dns.quad9.net</code> (Penyekat Domain Malware/Ransomware Automatik)</div>
+          <div class="log-item"><strong>Cara Aktifkan Di Telefon (30 Saat):</strong><br>
+            1. Buka <strong>Settings</strong> telefon → <strong>Network & Internet</strong> (atau <em>Connections → More Connection Settings</em>).<br>
+            2. Pilih <strong>Private DNS</strong> → Pilih <em>Private DNS provider hostname</em>.<br>
+            3. Tampal <code>dns.quad9.net</code> dan tekan <strong>Save</strong>.<br>
+            <em>Kesan: Walaupun anda tertekan link scam/ransomware di WhatsApp atau Telegram, telefon akan menyekat sambungan itu secara automatik!</em>
+          </div>
+        `;
+      }
+    });
+  }
+
+  if (btnScanDownloadsNow) {
+    btnScanDownloadsNow.addEventListener('click', () => {
+      switchTab('tab-security');
+      if (apkFileInput) apkFileInput.click();
+    });
+  }
+
   // Handle incoming Android/Mobile Web Share Target (?url=...&text=...)
   const params = new URLSearchParams(window.location.search);
   const sharedUrl = params.get('url');
@@ -1341,7 +1538,7 @@ document.addEventListener('DOMContentLoaded', () => {
       phishInput.value = sharedUrl;
       inspectUrlWithDoh(sharedUrl, phishLogBox);
     } else if (sharedText) {
-      const extractedUrl = sharedText.match(/https?:\/\/[^\s]+/i);
+      const extractedUrl = sharedText.match(/(?:https?:\/\/|[a-z0-9-]+\.(?:xyz|top|tk|click|buzz|monster|loan|work|gq|cf|cc|icu|vip|shop|sbs|cfd|com|net|org|my|ly|co|me|id|gd|gy)(?:\/[^\s]*)?)/i);
       if (extractedUrl && phishInput) {
         phishInput.value = extractedUrl[0];
         inspectUrlWithDoh(extractedUrl[0], phishLogBox);
