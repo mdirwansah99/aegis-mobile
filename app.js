@@ -92,7 +92,14 @@ document.addEventListener('DOMContentLoaded', () => {
     'directyp.org', 'popads.net', 'adsterra.com', 'maybank2u-secure.xyz',
     'cimbclicks-verify.top', 'tng-ewallet-claim.buzz', 'bantuan-str-gov.xyz',
     'mysejahtera-bantuan.top', 'lhdn-refund.click', 'jpj-saman-online.xyz',
-    'poslaju-parcel.top', 'padu-bantuan.xyz', 'kwsp-akaun3.top'
+    'poslaju-parcel.top', 'padu-bantuan.xyz', 'kwsp-akaun3.top',
+    'str-semakan.xyz', 'bantuan-rakyat-2026.top', 'bantuantunairahmah.xyz',
+    'pdrm-saman.xyz', 'saman-polis.top', 'semakan-saman-jpj.xyz',
+    'kwsp-fsa2.top', 'kwsp-akaun-fleksibel.xyz', 'bankislam-secure.top',
+    'rhb-online-verify.xyz', 'ambank-login.xyz', 'thijari-bantuan.xyz',
+    'tabunghaji-claim.top', 'telegram-login-web.xyz', 'whatsapp-verify-my.top',
+    'pakej-perkahwinan.xyz', 'resit-pembayaran.top', 'kad-jemputan-majlis.xyz',
+    'asnb-dividen.xyz', 'mytnb-bil-semakan.top'
   ];
   const KNOWN_MALICIOUS_SET = new Set(KNOWN_MALICIOUS_DOMAINS);
   KNOWN_MALICIOUS_DOMAINS.forEach((d) => threatBloom.add(d));
@@ -310,15 +317,26 @@ document.addEventListener('DOMContentLoaded', () => {
       checks.push('✅ Sokongan Kunci Perkakasan FIDO2 / Passkey Dikesan.');
     }
 
+    const threatCount = getThreatCount();
+    if (threatCount > 0) {
+      const penalty = Math.min(35, threatCount * 10);
+      score -= penalty;
+      checks.push(`⚠️ ${threatCount} insiden ancaman keselamatan dikesan/disekat pada peranti (Penalti -${penalty}%).`);
+    }
+
     if (healthScore) healthScore.textContent = `${score}%`;
     if (meterCircle) {
-      meterCircle.style.borderColor = score >= 90 ? '#10b981' : '#f59e0b';
+      meterCircle.style.borderColor = score >= 90 ? '#10b981' : (score >= 70 ? '#f59e0b' : '#f43f5e');
     }
     if (statusHeading) {
-      statusHeading.textContent = score >= 90 ? 'Perisai Peranti Tahap Optimum' : 'Peranti Perlu Perhatian';
+      if (threatCount > 0) {
+        statusHeading.textContent = score >= 80 ? 'Peranti Berwaspada (Ada Rekod Ancaman)' : 'Peranti Perlu Perhatian Segera';
+      } else {
+        statusHeading.textContent = score >= 90 ? 'Perisai Peranti Tahap Optimum' : 'Peranti Perlu Perhatian';
+      }
     }
     if (statusSub) {
-      statusSub.textContent = `Talian: ${effType} (${rttVal !== null ? rttVal + ' ms' : 'Luar Talian'}) • Memori: ${storageText}`;
+      statusSub.textContent = `Talian: ${effType} (${rttVal !== null ? rttVal + ' ms' : 'Luar Talian'}) • Memori: ${storageText} • Ancaman: ${threatCount}`;
     }
 
     return { score, checks, effType, rttVal, storageText };
@@ -455,9 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const fallbackLen = compSize > 0 ? compSize : Math.min(256 * 1024, Math.max(0, uint8.length - dataStart));
       const safeCompSize = Math.min(fallbackLen, Math.max(0, uint8.length - dataStart));
 
-      // Decompress AndroidManifest.xml or scan classes.dex header
+      // Decompress AndroidManifest.xml or scan all classes*.dex headers (Multi-DEX support)
       if (
-        (fileName === 'AndroidManifest.xml' || fileName === 'classes.dex' || fileName.endsWith('.xml')) &&
+        (fileName === 'AndroidManifest.xml' || fileName.endsWith('.dex') || fileName.endsWith('.xml')) &&
         safeCompSize > 0 &&
         safeCompSize < 2 * 1024 * 1024
       ) {
@@ -523,10 +541,10 @@ document.addEventListener('DOMContentLoaded', () => {
           findings.push(`⚠️ Entropi Shannon Sangat Tinggi (${entropy.toFixed(2)} bit/bait) — ciri payload tersulit atau dropper terbungkus.`);
         }
 
-        // 4. Deep APK / ZIP Inspection
+        // 4. Deep APK / ZIP / Split-APK Inspection
         let detectedPerms = [];
         let internalSummary = '';
-        if (magicType.includes('ZIP / Android APK') || /\.apk$/i.test(file.name)) {
+        if (magicType.includes('ZIP / Android APK') || /\.(apk|xapk|apks|apkm)$/i.test(file.name)) {
           const { entries, extractedText } = await parseZipAndManifest(uint8);
           const upperText = extractedText.toUpperCase();
 
@@ -588,6 +606,20 @@ document.addEventListener('DOMContentLoaded', () => {
           internalSummary = `Fail Dalaman ZIP: ${entries.length} komponen (${hasDex ? 'Ada classes.dex' : 'Tiada DEX'}, ${nativeLibs.length} pustaka .so)`;
         }
 
+        // 5. HTML / SVG / HTA Attachment Smuggling & Phishing Form Inspection (WhatsApp/Telegram Lures)
+        const textPreview = new TextDecoder('utf-8', { fatal: false }).decode(uint8.subarray(0, Math.min(uint8.length, 512 * 1024)));
+        if (/\.(html|htm|svg|hta|xhtml)$/i.test(file.name) || /^\s*(?:<!doctype\s+html|<html|<svg|<\?xml)/i.test(textPreview)) {
+          magicType = 'Lampiran Web HTML / SVG / HTA';
+          if (/<input[^>]*type=['"]?password/i.test(textPreview) || /<form[^>]*action=/i.test(textPreview)) {
+            riskScore += 75;
+            findings.push('🛑 BORANG PHISHING HTML/SVG: Lampiran mengandungi borang curi kata laluan (<input type="password">)!');
+          }
+          if (/<script|onload\s*=|onerror\s*=|api\.telegram\.org\/bot|atob\s*\(|eval\s*\(|fromCharCode|window\.location/i.test(textPreview)) {
+            riskScore += 65;
+            findings.push('🚨 SKRIP / C2 DALAM LAMPIRAN: Mengandungi JavaScript berbahaya atau penghantaran data ke pelayan penggodam!');
+          }
+        }
+
         riskScore = Math.min(riskScore, 100);
         let verdict = 'TIADA CORAK TROJAN DIKESAN';
         let color = '#10b981';
@@ -645,7 +677,19 @@ document.addEventListener('DOMContentLoaded', () => {
     { kw: 'poslaju', official: ['pos.com.my'] },
     { kw: 'jpj', official: ['jpj.gov.my'] },
     { kw: 'pdrm', official: ['rmp.gov.my'] },
-    { kw: 'padu', official: ['padu.gov.my'] }
+    { kw: 'padu', official: ['padu.gov.my'] },
+    { kw: 'thijari', official: ['thijari.com.my', 'tabunghaji.gov.my'] },
+    { kw: 'tabunghaji', official: ['thijari.com.my', 'tabunghaji.gov.my'] },
+    { kw: 'asnb', official: ['myasnb.com.my', 'asnb.com.my'] },
+    { kw: 'myasnb', official: ['myasnb.com.my', 'asnb.com.my'] },
+    { kw: 'bnm', official: ['bnm.gov.my'] },
+    { kw: 'banknegara', official: ['bnm.gov.my'] },
+    { kw: 'mytnb', official: ['mytnb.com.my', 'tnb.com.my'] },
+    { kw: 'ptptn', official: ['ptptn.gov.my'] },
+    { kw: 'sspn', official: ['ptptn.gov.my'] },
+    { kw: 'shopeepay', official: ['shopee.com.my'] },
+    { kw: 'grabpay', official: ['grab.com'] },
+    { kw: 'myboost', official: ['myboost.co', 'myboost.com.my'] }
   ];
 
   const URL_SHORTENERS = new Set([
@@ -666,8 +710,11 @@ document.addEventListener('DOMContentLoaded', () => {
     targetBox.style.display = 'block';
     targetBox.innerHTML = '<div class="log-item">⏳ Memeriksa Penapis Bloom, Homograf Punycode & Rekod DNS-over-HTTPS...</div>';
 
-    // 0. Intercept Dangerous Non-HTTP Schemes & QR/USSD OTP Hijack Vectors (tel:*21*, javascript:, intent:, data:, sms:)
-    if (/^(javascript|data|vbscript|intent|sms|smsto|mailto):/i.test(rawUrl) || /^tel:\s*(\*|%2a)(21|61|62|67)(\*|%2a)/i.test(rawUrl)) {
+    // 0. Intercept Dangerous Non-HTTP Schemes & QR/USSD OTP Hijack Vectors (tel:*21*, **21*, *002*, javascript:, intent:, data:, blob:, file:)
+    if (
+      /^(javascript|data|vbscript|intent|sms|smsto|mailto|blob|file|filesystem):/i.test(rawUrl) ||
+      /^tel:\s*(?:\*|%2a|#|%23)+(?:21|61|62|67|002|004)(?:\*|%2a|#|%23)/i.test(rawUrl)
+    ) {
       const verdict = 'BAHAYA KRITIKAL — SKEMA URI / USSD HASAD!';
       const reason = /^tel:/i.test(rawUrl)
         ? '🛑 SERANGAN USSD CALL-FORWARDING (*21*/*61*): Cubaan mencuri panggilan OTP suara bank anda!'
@@ -686,7 +733,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const urlObj = new URL(normalized);
       const host = urlObj.hostname.toLowerCase();
       const deLeetHost = normalizeLeetspeak(host);
-      const lowerPath = (urlObj.pathname + urlObj.search).toLowerCase();
+      let decodedPath = urlObj.pathname + urlObj.search;
+      try {
+        decodedPath = decodeURIComponent(decodedPath);
+      } catch (_) {}
+      const lowerPath = decodedPath.toLowerCase();
 
       let riskScore = 0;
       const reasons = [];
@@ -717,10 +768,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      // 5. Direct Malware / Sideload Dropper Download (.apk, .exe, .scr, .bat, .dex)
-      if (/\.(apk|exe|scr|bat|cmd|msi|vbs|dex|ps1)(\?|$|#)/i.test(lowerPath)) {
+      // 5. Direct Malware / Sideload Dropper Download (.apk, .xapk, .apks, .exe, .scr, .bat, .dex, .html, .svg)
+      if (/\.(apk|xapk|apks|apkm|exe|scr|bat|cmd|msi|vbs|dex|ps1|iso|cab|hta|html|htm|svg)(\?|$|#)/i.test(lowerPath)) {
         riskScore += 75;
-        reasons.push('🛑 MUAT TURUN DROPPER (.APK/.EXE): Pautan ini memuat turun fail boleh laku secara terus di luar gedung rasmi!');
+        reasons.push('🛑 MUAT TURUN DROPPER (.APK/.EXE/.HTML): Pautan ini memuat turun fail boleh laku atau lampiran phishing secara terus!');
       }
 
       // 6. URL Shortener Cloaking Detection
@@ -733,11 +784,17 @@ document.addEventListener('DOMContentLoaded', () => {
         'directyp', 'popads', 'adsterra', 'free-money', 'hadiah', 'angpao',
         'login-verify', 'update-account', 'bantuan-rakyat', 'lhdn-cukai',
         'saman-jpj', 'parcel-claim', 'str-bantuan', 'akaun-disekat', 'tac-verify',
-        'secure-portal', 'online-verify', 'batal-transaksi', 'claim-bantuan'
+        'secure-portal', 'online-verify', 'batal-transaksi', 'claim-bantuan',
+        'hibah', 'dividen', 'esemakan', 'semakan', 'bantuan', 'rebat', 'pengesahan', 'tuntutan', 'kemaskini'
       ];
       if (scamWords.some((k) => host.includes(k) || lowerPath.includes(k))) {
         riskScore += 60;
         reasons.push('⚠️ Mengandungi kata kunci umpan scam/phishing berisiko tinggi.');
+      }
+
+      if (urlObj.port && !['80', '443'].includes(urlObj.port)) {
+        riskScore += 55;
+        reasons.push(`🚨 PORT BUKAN STANDARD (:${urlObj.port}): Sering digunakan oleh pelayan C2 atau laman phishing sementara!`);
       }
 
       const dangerousTlds = ['.xyz', '.top', '.tk', '.click', '.buzz', '.monster', '.loan', '.work', '.gq', '.cf', '.cc', '.icu', '.vip', '.shop', '.sbs', '.cfd'];
@@ -911,7 +968,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       smsLogBox.style.display = 'block';
-      const lower = text.toLowerCase();
+      const zwRegex = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/g;
+      const hasZeroWidth = zwRegex.test(text);
+      const cleanText = text.replace(zwRegex, '');
+      const lower = cleanText.toLowerCase();
 
       const scamPatterns = [
         { term: 'lhdn', reason: 'Menyamar sebagai LHDN / tuntutan cukai.' },
@@ -942,10 +1002,16 @@ document.addEventListener('DOMContentLoaded', () => {
       ];
 
       const detected = scamPatterns.filter((p) => lower.includes(p.term));
+      if (hasZeroWidth) {
+        detected.unshift({
+          term: 'zero-width-evasion',
+          reason: '🚨 TEKNIK PENYAMARAN HACKER: Mesej menyelitkan aksara Unicode halimunan (Zero-Width Space) untuk mengelak pengimbas!'
+        });
+      }
       // Match both full http(s) URLs and bare domains/paths (e.g., maybank2u-batal.xyz/login or bit.ly/xyz)
-      const urlMatches = text.match(/(?:https?:\/\/|[a-z0-9-]+\.(?:xyz|top|tk|click|buzz|monster|loan|work|gq|cf|cc|icu|vip|shop|sbs|cfd|com|net|org|my|ly|co|me|id|gd|gy)(?:\/[^\s]*)?)/gi) || [];
+      const urlMatches = cleanText.match(/(?:https?:\/\/|[a-z0-9-]+\.(?:xyz|top|tk|click|buzz|monster|loan|work|gq|cf|cc|icu|vip|shop|sbs|cfd|com|net|org|my|ly|co|me|id|gd|gy)(?:\/[^\s]*)?)/gi) || [];
 
-      let urlBonus = urlMatches.length > 0 ? 35 : 0;
+      let urlBonus = (urlMatches.length > 0 ? 35 : 0) + (hasZeroWidth ? 15 : 0);
       urlMatches.forEach((u) => {
         const cleanHost = u.replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
         if (isKnownMaliciousDomain(cleanHost) || /\.(xyz|top|tk|click|buzz|icu|vip|sbs)$/i.test(cleanHost)) {
@@ -1090,20 +1156,37 @@ document.addEventListener('DOMContentLoaded', () => {
   const dupFileInput = document.getElementById('dupFileInput');
   const dupLogBox = document.getElementById('dupLogBox');
   const dupPreviewContainer = document.getElementById('dupPreviewContainer');
+  let activeDupObjectUrls = [];
+
+  function revokeDupUrls() {
+    activeDupObjectUrls.forEach((url) => {
+      try { URL.revokeObjectURL(url); } catch (_) {}
+    });
+    activeDupObjectUrls = [];
+  }
 
   if (dupFileInput) {
     dupFileInput.addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files);
-      if (files.length === 0) return;
+      const allFiles = Array.from(e.target.files);
+      if (allFiles.length === 0) return;
 
+      revokeDupUrls();
       dupLogBox.style.display = 'block';
       if (dupPreviewContainer) dupPreviewContainer.innerHTML = '';
-      dupLogBox.innerHTML = `<div class="log-item">⏳ Mengira hash SHA-256 bagi ${files.length} fail...</div>`;
+
+      const MAX_DUP_FILES = 50;
+      const files = allFiles.slice(0, MAX_DUP_FILES);
+      if (allFiles.length > MAX_DUP_FILES) {
+        dupLogBox.innerHTML = `<div class="log-item" style="color:#f59e0b;">⚠️ Demi kestabilan memori telefon, dihadkan kepada ${MAX_DUP_FILES} fail pertama (daripada ${allFiles.length} fail).</div>`;
+      } else {
+        dupLogBox.innerHTML = `<div class="log-item">⏳ Mengira hash SHA-256 bagi ${files.length} fail...</div>`;
+      }
 
       const hashMap = {};
       const duplicates = [];
 
-      for (const file of files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         try {
           const buffer = await file.arrayBuffer();
           const hash = await computeHash(buffer, 'SHA-256');
@@ -1113,6 +1196,11 @@ document.addEventListener('DOMContentLoaded', () => {
             hashMap[hash] = file;
           }
         } catch (_) {}
+
+        // Yield to event loop every 5 files to prevent mobile UI freeze
+        if (i % 5 === 0) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
       }
 
       if (duplicates.length === 0) {
@@ -1136,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dupPreviewContainer) {
           duplicates.forEach((item) => {
             const url = URL.createObjectURL(item.dup);
+            activeDupObjectUrls.push(url);
             const img = document.createElement('img');
             img.src = url;
             img.className = 'dup-thumb';
@@ -1299,25 +1388,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const ips = new Set();
+      let settled = false;
       const pc = new RTCPeerConnection({ iceServers: [] });
       pc.createDataChannel('');
+
+      const finishWebRtcCheck = () => {
+        if (settled) return;
+        settled = true;
+        try { pc.close(); } catch (_) {}
+        if (ips.size === 0) {
+          webrtcLogBox.innerHTML = '<div class="log-item" style="color:#10b981;">✅ SELAMAT: Tiada alamat IP tempatan/awam terdedah melalui WebRTC (mDNS aktif).</div>';
+        } else {
+          webrtcLogBox.innerHTML = `
+            <div class="log-item" style="color:#f59e0b; font-weight:700;">⚠️ Alamat IP WebRTC Terdedah (${ips.size}):</div>
+            <div class="log-item">${Array.from(ips).map((ip) => '• <code>' + escapeHtml(ip) + '</code>').join('<br>')}</div>
+          `;
+        }
+      };
+
+      // 3-second safety timeout to avoid hanging if candidates gather slowly
+      const timer = setTimeout(finishWebRtcCheck, 3000);
+
       pc.onicecandidate = (e) => {
         if (!e.candidate || !e.candidate.candidate) {
-          pc.close();
-          if (ips.size === 0) {
-            webrtcLogBox.innerHTML = '<div class="log-item" style="color:#10b981;">✅ SELAMAT: Tiada alamat IP tempatan/awam terdedah melalui WebRTC (mDNS aktif).</div>';
-          } else {
-            webrtcLogBox.innerHTML = `
-              <div class="log-item" style="color:#f59e0b; font-weight:700;">⚠️ Alamat IP WebRTC Terdedah (${ips.size}):</div>
-              <div class="log-item">${Array.from(ips).map((ip) => '• <code>' + escapeHtml(ip) + '</code>').join('<br>')}</div>
-            `;
-          }
+          clearTimeout(timer);
+          finishWebRtcCheck();
           return;
         }
         const match = e.candidate.candidate.match(/([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{1,4}){7})/i);
         if (match && match[1]) ips.add(match[1]);
       };
-      pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => {});
+      pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => {
+        clearTimeout(timer);
+        finishWebRtcCheck();
+      });
     });
   }
 
@@ -1525,6 +1629,104 @@ document.addEventListener('DOMContentLoaded', () => {
     btnScanDownloadsNow.addEventListener('click', () => {
       switchTab('tab-security');
       if (apkFileInput) apkFileInput.click();
+    });
+  }
+
+  // ========================================================
+  // 16. Threat Incident Details Modal & Counter Reset
+  // ========================================================
+  const threatMetricPill = document.getElementById('threatMetricPill');
+  const threatDetailsModal = document.getElementById('threatDetailsModal');
+  const btnCloseThreatModal = document.getElementById('btnCloseThreatModal');
+  const threatModalList = document.getElementById('threatModalList');
+  const btnCopyThreatModal = document.getElementById('btnCopyThreatModal');
+  const btnClearThreatLogs = document.getElementById('btnClearThreatLogs');
+
+  function renderThreatModalList() {
+    if (!threatModalList) return;
+    const logs = JSON.parse(localStorage.getItem(FORENSIC_KEY) || '[]');
+
+    if (logs.length === 0) {
+      threatModalList.innerHTML = `
+        <div class="log-item" style="color:#10b981; text-align:center; padding:18px;">
+          ✅ <strong>Tiada Rekod Ancaman Aktif</strong><br>
+          <span style="font-size:11px; color:#94a3b8;">Peranti anda dalam keadaan bersih &amp; terlindung.</span>
+        </div>
+      `;
+      return;
+    }
+
+    threatModalList.innerHTML = logs.map((l, index) => {
+      const isCritical = (l.score || 0) >= 70;
+      const cardClass = isCritical ? 'threat-item-card' : 'threat-item-card warning-item';
+      const badgeClass = isCritical ? 'threat-item-badge' : 'threat-item-badge warning';
+      const timeStr = l.timestamp ? new Date(l.timestamp).toLocaleString('ms-MY') : 'Terkini';
+
+      return `
+        <div class="${cardClass}">
+          <div class="threat-item-header">
+            <span class="${badgeClass}">#${index + 1} ${escapeHtml(l.category || 'ANCAMAN')}</span>
+            <span class="threat-item-time">${escapeHtml(timeStr)}</span>
+          </div>
+          <div class="threat-item-target">🎯 ${escapeHtml(l.target || 'Tidak dinamakan')}</div>
+          <div class="threat-item-verdict">🛑 <strong>${escapeHtml(l.verdict || 'DISEKAT')}</strong> (Skor: ${l.score || 0}/100 • MITRE ${escapeHtml(l.mitre || 'T1566')})</div>
+          ${l.details ? `<div class="threat-item-details">• ${escapeHtml(l.details)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function openThreatModal() {
+    if (threatDetailsModal) {
+      renderThreatModalList();
+      threatDetailsModal.style.display = 'flex';
+    }
+  }
+
+  function closeThreatModal() {
+    if (threatDetailsModal) {
+      threatDetailsModal.style.display = 'none';
+    }
+  }
+
+  if (threatMetricPill) {
+    threatMetricPill.addEventListener('click', openThreatModal);
+  }
+
+  if (btnCloseThreatModal) {
+    btnCloseThreatModal.addEventListener('click', closeThreatModal);
+  }
+
+  if (threatDetailsModal) {
+    threatDetailsModal.addEventListener('click', (e) => {
+      if (e.target === threatDetailsModal) {
+        closeThreatModal();
+      }
+    });
+  }
+
+  if (btnCopyThreatModal) {
+    btnCopyThreatModal.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(generateForensicReportText());
+        btnCopyThreatModal.textContent = '✅ Disalin!';
+        setTimeout(() => { btnCopyThreatModal.textContent = '📋 Salin Laporan'; }, 2000);
+      } catch (_) {
+        alert('Gagal menyalin. Sila pilih teks secara manual.');
+      }
+    });
+  }
+
+  if (btnClearThreatLogs) {
+    btnClearThreatLogs.addEventListener('click', () => {
+      const confirmReset = confirm('Adakah anda pasti mahu menetapkan semula pembilang ancaman kepada 0 dan mengosongkan log insiden peranti?');
+      if (!confirmReset) return;
+
+      localStorage.removeItem(FORENSIC_KEY);
+      localStorage.setItem(THREAT_COUNT_KEY, '0');
+      updateThreatCounterUI();
+      refreshRealTelemetry();
+      renderThreatModalList();
     });
   }
 
