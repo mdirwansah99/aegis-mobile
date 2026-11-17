@@ -19,11 +19,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const SOC_MODE_KEY = 'aegis_soc_mode_v3';
 
   function getThreatCount() {
-    return parseInt(localStorage.getItem(THREAT_COUNT_KEY) || '0', 10);
+    const parsed = parseInt(localStorage.getItem(THREAT_COUNT_KEY) || '0', 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  }
+
+  function safeReadForensicLogs() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(FORENSIC_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
   }
 
   function recordForensicEvent(category, target, verdict, score, details, mitreId) {
-    const logs = JSON.parse(localStorage.getItem(FORENSIC_KEY) || '[]');
+    const logs = safeReadForensicLogs();
     const entry = {
       timestamp: new Date().toISOString(),
       category,
@@ -117,17 +127,47 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Verify WebCrypto availability & deterministic SHA-256 feed integrity digest
+  function updateCapabilityBadges(cryptoOk) {
+    const setCap = (id, icon, text) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = `<span>${icon}</span> ${escapeHtml(text)}`;
+    };
+    setCap('capApk', typeof DecompressionStream !== 'undefined' ? '✅' : '⚠️', 'Pembedah Binari APK/DEX');
+    setCap('capQr', 'BarcodeDetector' in window ? '✅' : '⚠️', 'Pengimbas QR Kamera/Fail');
+    setCap('capBreach', cryptoOk ? '✅' : '⚠️', 'Semakan Bocor k-Anonymity');
+    setCap('capWebrtc', typeof RTCPeerConnection !== 'undefined' ? '✅' : 'ℹ️', 'Pengesan Kebocoran WebRTC');
+  }
+
   async function verifyEngineIntegrity() {
     const badge = document.getElementById('feedSignBadge');
     const topStatus = document.getElementById('ed25519Status');
+    if (!window.crypto || !window.crypto.subtle) {
+      if (badge) badge.textContent = 'HTTP TIDAK SELAMAT';
+      if (topStatus) {
+        topStatus.textContent = '⚠️ WebCrypto Nyahaktif (Guna HTTPS untuk sahkan SHA-256)';
+        topStatus.style.color = '#f59e0b';
+      }
+      updateCapabilityBadges(false);
+      return false;
+    }
     try {
       const enc = new TextEncoder().encode(KNOWN_MALICIOUS_DOMAINS.join('|'));
       const digest = await crypto.subtle.digest('SHA-256', enc);
       const hex = Array.from(new Uint8Array(digest)).slice(0, 4).map((b) => b.toString(16).padStart(2, '0')).join('');
       if (badge) badge.textContent = `SHA-256: ${hex.toUpperCase()}`;
-      if (topStatus) topStatus.textContent = `🔒 Enjin PERISAI v3.0 Aktif (SHA-256: ${hex})`;
+      if (topStatus) {
+        topStatus.textContent = `🔒 Enjin PERISAI v3.5 Aktif (SHA-256: ${hex})`;
+        topStatus.style.color = '#10b981';
+      }
+      updateCapabilityBadges(true);
       return true;
     } catch (_) {
+      if (badge) badge.textContent = 'RALAT INTEGRITI';
+      if (topStatus) {
+        topStatus.textContent = '❌ Semakan Integriti Enjin Gagal (ERROR)';
+        topStatus.style.color = '#f43f5e';
+      }
+      updateCapabilityBadges(false);
       return false;
     }
   }
@@ -136,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ========================================================
   // 2. Dual-Mode Toggle (Awam vs SOC Mode) & Tab Navigation
   // ========================================================
+  let stopQrCamera = () => {};
   const btnSocMode = document.getElementById('btnSocMode');
   function applySocMode(enabled) {
     document.body.classList.toggle('soc-mode', enabled);
@@ -157,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const navItems = document.querySelectorAll('.nav-item');
   const tabContents = document.querySelectorAll('.tab-content');
   function switchTab(targetTabId) {
+    if (targetTabId !== 'tab-security') stopQrCamera();
     navItems.forEach((n) => n.classList.toggle('active', n.getAttribute('data-tab') === targetTabId));
     tabContents.forEach((t) => t.classList.toggle('active', t.id === targetTabId));
   }
@@ -308,9 +350,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if ('serviceWorker' in navigator) {
-      checks.push('✅ Enjin Luar Talian (Service Worker) Sedia.');
+      let swActive = Boolean(navigator.serviceWorker.controller);
+      if (!swActive) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          swActive = Boolean(reg && (reg.active || reg.installing || reg.waiting));
+        } catch (_) {}
+      }
+      if (swActive) {
+        checks.push('✅ Enjin Luar Talian (Service Worker) Aktif.');
+      } else {
+        score -= 5;
+        checks.push('⏳ Enjin Luar Talian (Service Worker) belum aktif / sedang dimuat.');
+      }
     } else {
       score -= 10;
+      checks.push('⚠️ Pelayar tidak menyokong Service Worker.');
     }
 
     if (window.PublicKeyCredential) {
@@ -406,18 +461,49 @@ document.addEventListener('DOMContentLoaded', () => {
     return out.join('\n');
   }
 
-  // Decompress raw DEFLATE entry using browser's native DecompressionStream
+  // Decompress raw DEFLATE entry using bounded stream (<= 35 MB, 400ms timeout, explicit cancel)
+  const MAX_DECOMPRESSED_BYTES = 35 * 1024 * 1024;
   async function inflateRawEntry(compressedBytes) {
-    if (typeof DecompressionStream === 'undefined') return compressedBytes;
+    if (typeof DecompressionStream === 'undefined') return { bytes: compressedBytes, zipBombBlocked: false };
+    let reader = null;
+    let timerId = null;
+    let timedOut = false;
     try {
       const stream = new Blob([compressedBytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      const ab = await Promise.race([
-        new Response(stream).arrayBuffer(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 400))
-      ]);
-      return new Uint8Array(ab);
+      reader = stream.getReader();
+      timerId = setTimeout(() => {
+        timedOut = true;
+        if (reader) reader.cancel().catch(() => {});
+      }, 400);
+
+      const chunks = [];
+      let totalBytes = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (timedOut) {
+          await reader.cancel().catch(() => {});
+          return { bytes: compressedBytes, zipBombBlocked: false };
+        }
+        totalBytes += value.byteLength;
+        if (totalBytes > MAX_DECOMPRESSED_BYTES) {
+          await reader.cancel().catch(() => {});
+          return { bytes: new Uint8Array(0), zipBombBlocked: true, inflatedBytes: totalBytes };
+        }
+        chunks.push(value);
+      }
+
+      const out = new Uint8Array(totalBytes);
+      let pos = 0;
+      for (const chunk of chunks) {
+        out.set(chunk, pos);
+        pos += chunk.byteLength;
+      }
+      return { bytes: out, zipBombBlocked: false };
     } catch (_) {
-      return compressedBytes;
+      return { bytes: compressedBytes, zipBombBlocked: false };
+    } finally {
+      if (timerId) clearTimeout(timerId);
     }
   }
 
@@ -427,6 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const entries = [];
     const cdMeta = new Map();
     let extractedText = '';
+    let zipBombBlocked = false;
 
     // 1. Scan ZIP Central Directory (0x02014b50) from tail to resolve real compSize when Bit-3 is set
     const cdScanStart = Math.max(0, uint8.length - 512 * 1024);
@@ -445,11 +532,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. Scan Local File Headers (0x04034b50)
+    // 2. Scan Local File Headers (0x04034b50), capped at 200 entries (PERISAI Standard)
     let offset = 0;
     const maxOffset = Math.min(uint8.length - 30, 16 * 1024 * 1024);
 
-    while (offset < maxOffset && entries.length < 300) {
+    while (offset < maxOffset && entries.length < 200) {
       if (view.getUint32(offset, true) !== 0x04034b50) {
         offset++;
         continue;
@@ -480,8 +567,16 @@ document.addEventListener('DOMContentLoaded', () => {
         safeCompSize < 2 * 1024 * 1024
       ) {
         const rawSlice = uint8.subarray(dataStart, dataStart + safeCompSize);
-        const unpacked = compression === 8 ? await inflateRawEntry(rawSlice) : rawSlice;
-        extractedText += '\n' + extractBinaryStrings(unpacked, 5);
+        if (compression === 8) {
+          const inflated = await inflateRawEntry(rawSlice);
+          if (inflated.zipBombBlocked) {
+            zipBombBlocked = true;
+            break;
+          }
+          extractedText += '\n' + extractBinaryStrings(inflated.bytes, 5);
+        } else {
+          extractedText += '\n' + extractBinaryStrings(rawSlice, 5);
+        }
       }
 
       offset = dataStart + (compSize > 0 ? compSize : 1);
@@ -489,7 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Fallback: also scan raw buffer strings
     extractedText += '\n' + extractBinaryStrings(uint8, 6);
-    return { entries, extractedText };
+    return { entries, extractedText, zipBombBlocked };
   }
 
   if (apkFileInput) {
@@ -545,7 +640,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let detectedPerms = [];
         let internalSummary = '';
         if (magicType.includes('ZIP / Android APK') || /\.(apk|xapk|apks|apkm)$/i.test(file.name)) {
-          const { entries, extractedText } = await parseZipAndManifest(uint8);
+          const { entries, extractedText, zipBombBlocked } = await parseZipAndManifest(uint8);
+          if (zipBombBlocked) {
+            riskScore = 100;
+            findings.unshift('🛑 ZIP BOMB DIKESAN: Entri mampatan melebihi had selamat 35 MB (PERISAI Deflate Cap)!');
+          }
+          if (entries.some((en) => /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(en))) {
+            riskScore += 75;
+            findings.push('🚨 ARCHIVE SLIP (..): Entri ZIP mengandungi traversal direktori!');
+          }
           const upperText = extractedText.toUpperCase();
 
           const PERM_RULES = [
@@ -813,9 +916,19 @@ document.addEventListener('DOMContentLoaded', () => {
         reasons.push('⚠️ Sambungan HTTP tidak disulitkan (Tiada TLS/SSL).');
       }
 
-      // 5. Live DNS-over-HTTPS (Cloudflare DoH) Verification
+      // 5. Live DNS-over-HTTPS (Cloudflare DoH) Verification (skip RFC1918/localhost for privacy)
+      const isPrivateOrLocalHost = (h) =>
+        h === 'localhost' ||
+        h.endsWith('.local') ||
+        h.endsWith('.internal') ||
+        /^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(h) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(h) ||
+        /^\[?(::1|fe80:|fc00:|fd00:)/i.test(h);
+
       let dohInfo = 'Luar talian (Semakan heuristik tempatan sahaja)';
-      if (navigator.onLine) {
+      if (isPrivateOrLocalHost(host)) {
+        dohInfo = 'Hos Tempatan / LAN (Dilindungi — tidak dihantar ke DoH awam)';
+      } else if (navigator.onLine) {
         try {
           const dohRes = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`, {
             headers: { Accept: 'application/dns-json' }
@@ -873,14 +986,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const qrLogBox = document.getElementById('qrLogBox');
   let qrStream = null;
 
-  function stopQrCamera() {
+  stopQrCamera = () => {
     if (qrStream) {
       qrStream.getTracks().forEach((t) => t.stop());
       qrStream = null;
     }
     if (qrVideo) qrVideo.style.display = 'none';
     if (btnStartQrCam) btnStartQrCam.textContent = '🎥 Buka Kamera QR';
-  }
+  };
 
   async function handleDecodedQrPayload(rawValue) {
     stopQrCamera();
@@ -1085,11 +1198,20 @@ document.addEventListener('DOMContentLoaded', () => {
       breachLogBox.innerHTML = '<div class="log-item">⏳ Mengira SHA-1 tempatan & menyemak k-Anonymity (5 aksara prefix sahaja)...</div>';
 
       try {
+        const bits = calcPasswordEntropyBits(pwd);
+        if (!window.crypto || !window.crypto.subtle) {
+          breachLogBox.innerHTML = `
+            <div class="log-item"><strong>Status:</strong> <span style="color:#f59e0b; font-weight:800;">⚠️ KEBOCORAN TIDAK DAPAT DISEMAK (Memerlukan HTTPS)</span></div>
+            <div class="log-item"><strong>Kekuatan Kriptografi:</strong> ${bits} bit entropi (${bits >= 80 ? 'Sangat Kukuh' : bits >= 50 ? 'Sederhana' : 'Lemah'})</div>
+            <div class="log-item"><strong>Sebab:</strong> WebCrypto SHA-1 dilumpuhkan pelayar pada sambungan HTTP biasa.</div>
+          `;
+          return;
+        }
+
         const enc = new TextEncoder().encode(pwd);
         const sha1Full = (await computeHash(enc, 'SHA-1')).toUpperCase();
         const prefix = sha1Full.slice(0, 5);
         const suffix = sha1Full.slice(5);
-        const bits = calcPasswordEntropyBits(pwd);
 
         let leakCount = 0;
         let onlineChecked = false;
@@ -1184,9 +1306,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const hashMap = {};
       const duplicates = [];
+      const largeFiles = [];
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        if (file.size >= 5 * 1024 * 1024) {
+          largeFiles.push(file);
+        }
         try {
           const buffer = await file.arrayBuffer();
           const hash = await computeHash(buffer, 'SHA-256');
@@ -1203,8 +1329,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
+      const largeSummaryHtml = largeFiles.length
+        ? `<div class="log-item" style="color:#38bdf8; margin-top:4px;">📦 <strong>Fail Besar (&ge; 5 MB):</strong> ${largeFiles.slice(0, 5).map((f) => `${escapeHtml(f.name)} (${(f.size / (1024 * 1024)).toFixed(1)} MB)`).join(', ')}</div>`
+        : '';
+
       if (duplicates.length === 0) {
-        dupLogBox.innerHTML = `<div class="log-item" style="color:#10b981;">✅ Tiada fail pendua ditemui daripada ${files.length} gambar.</div>`;
+        dupLogBox.innerHTML = `<div class="log-item" style="color:#10b981;">✅ Tiada fail pendua ditemui daripada ${files.length} gambar.</div>${largeSummaryHtml}`;
       } else {
         const totalWastedBytes = duplicates.reduce((acc, d) => acc + d.dup.size, 0);
         const wastedMb = (totalWastedBytes / (1024 * 1024)).toFixed(2);
@@ -1219,6 +1349,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dupLogBox.innerHTML = `
           <div class="log-item" style="color:#f59e0b; font-weight:700;">Ditemui ${duplicates.length} Pendua (${wastedMb} MB):</div>
           ${listHtml}
+          ${largeSummaryHtml}
         `;
 
         if (dupPreviewContainer) {
@@ -1236,40 +1367,75 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Safe Cache Purger — preserves Aegis security logs & settings
+  // Safe Junk & Cache Purger — preserves Aegis forensic logs & sibling same-origin app keys
   const btnClearCache = document.getElementById('btnClearCache');
   const cacheLogBox = document.getElementById('cacheLogBox');
 
   if (btnClearCache) {
     btnClearCache.addEventListener('click', async () => {
       cacheLogBox.style.display = 'block';
-      cacheLogBox.innerHTML = '<div class="log-item">⏳ Membersihkan cache usang tanpa memadam konfigurasi keselamatan...</div>';
+      cacheLogBox.innerHTML = '<div class="log-item">⏳ Mengukur storan &amp; membersihkan sampah pelayar secara selamat...</div>';
 
       try {
+        let beforeBytes = null;
+        if (navigator.storage && navigator.storage.estimate) {
+          const estBefore = await navigator.storage.estimate();
+          if (typeof estBefore.usage === 'number') beforeBytes = estBefore.usage;
+        }
+
+        const freedUrls = activeDupObjectUrls.length;
+        revokeDupUrls();
+        if (dupPreviewContainer) dupPreviewContainer.innerHTML = '';
+
         sessionStorage.clear();
-        const preserved = {};
-        [FORENSIC_KEY, THREAT_COUNT_KEY, SOC_MODE_KEY].forEach((k) => {
-          const val = localStorage.getItem(k);
-          if (val !== null) preserved[k] = val;
-        });
-        localStorage.clear();
-        Object.entries(preserved).forEach(([k, v]) => localStorage.setItem(k, v));
+        const protectedKeys = new Set([FORENSIC_KEY, THREAT_COUNT_KEY, SOC_MODE_KEY]);
+        let removedStorageKeys = 0;
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('aegis_') && !protectedKeys.has(key)) {
+            localStorage.removeItem(key);
+            removedStorageKeys++;
+          }
+        }
 
         let deletedCaches = 0;
+        let purgedQueryEntries = 0;
         if (window.caches) {
           const keys = await caches.keys();
           for (const key of keys) {
-            if (!key.startsWith('aegis-ultimate-v3')) {
+            if (key !== 'aegis-ultimate-v3.5-perisai') {
               await caches.delete(key);
               deletedCaches++;
+            } else {
+              const activeCache = await caches.open(key);
+              const reqs = await activeCache.keys();
+              for (const req of reqs) {
+                if (new URL(req.url).search) {
+                  await activeCache.delete(req);
+                  purgedQueryEntries++;
+                }
+              }
             }
           }
         }
 
+        let deltaLabel = 'Tidak tersedia pada pelayar ini';
+        if (beforeBytes !== null && navigator.storage && navigator.storage.estimate) {
+          const estAfter = await navigator.storage.estimate();
+          if (typeof estAfter.usage === 'number') {
+            const deltaBytes = Math.max(0, beforeBytes - estAfter.usage);
+            deltaLabel = deltaBytes >= 1024 * 1024
+              ? `${(deltaBytes / (1024 * 1024)).toFixed(2)} MB`
+              : `${(deltaBytes / 1024).toFixed(1)} KB`;
+          }
+        }
+
+        await refreshRealTelemetry();
         cacheLogBox.innerHTML = `
-          <div class="log-item" style="color:#10b981; font-weight:700;">✅ Pembersihan Selamat Selesai!</div>
-          <div class="log-item">• ${deletedCaches} storan cache versi lama dipadamkan.</div>
-          <div class="log-item">• Rekod forensik & tetapan keselamatan Aegis dikekalkan.</div>
+          <div class="log-item" style="color:#10b981; font-weight:700;">✅ Pembersihan Sampah Selesai!</div>
+          <div class="log-item">• Storan Sebenar Dijimatkan: <strong>${escapeHtml(deltaLabel)}</strong></div>
+          <div class="log-item">• ${deletedCaches} storan cache usang &amp; ${purgedQueryEntries} entri pautan sementara dipadam.</div>
+          <div class="log-item">• ${freedUrls} penimbal imej &amp; ${removedStorageKeys} kunci sisa Aegis dibersihkan (log forensik dikekalkan).</div>
         `;
       } catch (err) {
         cacheLogBox.innerHTML = `<div class="log-item" style="color:#f43f5e;">Ralat: ${escapeHtml(err.message)}</div>`;
@@ -1319,13 +1485,48 @@ document.addEventListener('DOMContentLoaded', () => {
   const ramLogBox = document.getElementById('ramLogBox');
   if (btnRunRamBoost) {
     btnRunRamBoost.addEventListener('click', async () => {
+      btnRunRamBoost.disabled = true;
       ramLogBox.style.display = 'block';
+      ramLogBox.innerHTML = '<div class="log-item">⏳ Melepaskan penimbal objek, URL Blob, &amp; pemegang fail...</div>';
+
+      const beforeHeap = performance && performance.memory && performance.memory.usedJSHeapSize
+        ? performance.memory.usedJSHeapSize
+        : null;
+
+      // Actual client-side cleanup within PWA sandbox
+      const releasedBlobs = activeDupObjectUrls.length;
+      revokeDupUrls();
+      if (dupPreviewContainer) dupPreviewContainer.innerHTML = '';
+      if (apkFileInput) apkFileInput.value = '';
+      if (dupFileInput) dupFileInput.value = '';
+      if (qrFileInput) qrFileInput.value = '';
+      const hadQrCam = Boolean(qrStream);
+      stopQrCamera();
+      sessionStorage.clear();
+
+      // Yield 120ms so V8/browser can reclaim unreferenced handles before re-measuring
+      await new Promise((r) => setTimeout(r, 120));
       const diag = await refreshRealTelemetry();
+      const afterHeap = performance && performance.memory && performance.memory.usedJSHeapSize
+        ? performance.memory.usedJSHeapSize
+        : null;
+
+      let heapSummary = 'Dilindungi Sandbox (Metrik heap tidak didedahkan pelayar ini)';
+      if (beforeHeap !== null && afterHeap !== null) {
+        const beforeMb = (beforeHeap / (1024 * 1024)).toFixed(2);
+        const afterMb = (afterHeap / (1024 * 1024)).toFixed(2);
+        const deltaMb = ((beforeHeap - afterHeap) / (1024 * 1024)).toFixed(2);
+        heapSummary = `${beforeMb} MB → ${afterMb} MB (Delta sebenar: ${Number(deltaMb) >= 0 ? '-' + deltaMb : '+' + Math.abs(Number(deltaMb)).toFixed(2)} MB)`;
+      }
+
       ramLogBox.innerHTML = `
-        <div class="log-item" style="color:#10b981; font-weight:700;">📊 Diagnostik Memori & Storan Selesai</div>
-        <div class="log-item">• Penggunaan Semasa: ${escapeHtml(diag.storageText)}</div>
-        <div class="log-item">• Peruntukan rujukan objek sementara pelayar telah dibersihkan.</div>
+        <div class="log-item" style="color:#10b981; font-weight:700;">🚀 Pelepasan Penimbal Pelayar Selesai</div>
+        <div class="log-item">• <strong>Heap JS Sebenar:</strong> ${escapeHtml(heapSummary)}</div>
+        <div class="log-item">• <strong>Status Storan:</strong> ${escapeHtml(diag.storageText)}</div>
+        <div class="log-item">• <strong>Objek Dilepas:</strong> ${releasedBlobs} Blob URL imej${hadQrCam ? ' + 1 aliran kamera QR' : ''}, pemegang input fail, &amp; sesi sementara.</div>
+        <div class="log-item" style="color:#94a3b8; font-size:11px;">ℹ️ <em>Had Sandbox Android/iOS:</em> PWA hanya boleh bebaskan RAM pelayar sendiri. Untuk RAM sistem OS, tutup app berat di skrin <em>Recent Apps</em>.</div>
       `;
+      btnRunRamBoost.disabled = false;
     });
   }
 
@@ -1425,6 +1626,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Shared DNS-over-HTTPS (DoH) Probe with AbortController & honest error reporting
+  const DOH_RESOLVERS = [
+    { name: 'Cloudflare DoH (1.1.1.1)', host: '1dot1dot1dot1.cloudflare-dns.com', url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A' },
+    { name: 'Quad9 Threat-Block (9.9.9.9)', host: 'dns.quad9.net', url: 'https://dns.quad9.net:5053/dns-query?name=example.com&type=A' },
+    { name: 'Google Public DoH (8.8.8.8)', host: 'dns.google', url: 'https://dns.google/resolve?name=example.com&type=A' }
+  ];
+
+  async function probeDohResolvers(timeoutMs = 3500) {
+    if (!navigator.onLine) {
+      return DOH_RESOLVERS.map((t) => ({ ...t, ok: false, elapsed: null, status: 'Luar Talian' }));
+    }
+    const results = [];
+    for (const target of DOH_RESOLVERS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const start = performance.now();
+      try {
+        const res = await fetch(target.url, {
+          method: 'GET',
+          headers: { Accept: 'application/dns-json' },
+          cache: 'no-store',
+          mode: 'cors',
+          signal: controller.signal
+        });
+        const elapsed = Math.round(performance.now() - start);
+        if (!res.ok) {
+          results.push({ ...target, ok: false, elapsed, status: `Ralat HTTP ${res.status}` });
+        } else {
+          results.push({ ...target, ok: true, elapsed, status: 'Aktif' });
+        }
+      } catch (err) {
+        const elapsed = Math.round(performance.now() - start);
+        const reason = err && err.name === 'AbortError' ? 'Tamat Masa' : 'Gagal / Disekat';
+        results.push({ ...target, ok: false, elapsed, status: reason });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return results;
+  }
+
   // DNS-over-HTTPS (DoH) Benchmark
   const btnRunDnsPing = document.getElementById('btnRunDnsPing');
   const dnsLogBox = document.getElementById('dnsLogBox');
@@ -1432,41 +1674,28 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnRunDnsPing) {
     btnRunDnsPing.addEventListener('click', async () => {
       dnsLogBox.style.display = 'block';
-      dnsLogBox.innerHTML = '<div class="log-item">⏳ Menguji kependaman & resolusi terenkripsi DoH...</div>';
+      dnsLogBox.innerHTML = '<div class="log-item">⏳ Menguji kependaman &amp; resolusi terenkripsi DoH...</div>';
 
-      const dnsTargets = [
-        { name: 'Cloudflare DoH (1.1.1.1)', url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A' },
-        { name: 'Google Public DoH (8.8.8.8)', url: 'https://dns.google/resolve?name=example.com&type=A' },
-        { name: 'Quad9 Threat-Block (9.9.9.9)', url: 'https://dns.quad9.net:5053/dns-query?name=example.com&type=A' }
-      ];
+      const results = await probeDohResolvers(3500);
+      const resultsHtml = results
+        .map((r) => {
+          const color = r.ok ? '#10b981' : '#f43f5e';
+          const timing = r.elapsed !== null ? `${r.elapsed} ms` : '--';
+          return `<div class="log-item">${r.ok ? '⚡' : '❌'} <strong>${escapeHtml(r.name)}:</strong> <span style="color:${color}; font-weight:700;">${escapeHtml(timing)} (${escapeHtml(r.status)})</span></div>`;
+        })
+        .join('');
 
-      let resultsHtml = '';
-      for (const target of dnsTargets) {
-        const start = performance.now();
-        try {
-          await fetch(target.url, {
-            method: 'GET',
-            headers: { Accept: 'application/dns-json' },
-            cache: 'no-store',
-            mode: 'cors'
-          });
-          const elapsed = Math.round(performance.now() - start);
-          resultsHtml += `<div class="log-item">⚡ <strong>${escapeHtml(target.name)}:</strong> <span style="color:#10b981; font-weight:700;">${elapsed} ms (Aktif)</span></div>`;
-        } catch (_) {
-          const elapsed = Math.round(performance.now() - start);
-          resultsHtml += `<div class="log-item">⚡ <strong>${escapeHtml(target.name)}:</strong> <span style="color:#38bdf8; font-weight:700;">${elapsed} ms (Tersambung)</span></div>`;
-        }
-      }
-
+      const anyOk = results.some((r) => r.ok);
       dnsLogBox.innerHTML = `
-        <div class="log-item" style="color:#10b981; font-weight:700;">Keputusan Penanda Aras DoH Sebenar:</div>
+        <div class="log-item" style="color:${anyOk ? '#10b981' : '#f43f5e'}; font-weight:700;">${anyOk ? 'Keputusan Penanda Aras DoH Sebenar:' : '⚠️ Semua pelayan DoH gagal dihubungi (Luar Talian / Disekat):'}</div>
         ${resultsHtml}
       `;
     });
   }
 
-  // Active Keep-Alive & Baseband Guide
+  // Active Keep-Alive & Signal Booster (with AbortController + background tab pause)
   let stabilizer5GTimer = null;
+  let stabilizerInFlight = false;
   const btnToggle5GStabilizer = document.getElementById('btnToggle5GStabilizer');
   const stabilizer5GLogBox = document.getElementById('stabilizer5GLogBox');
 
@@ -1476,13 +1705,29 @@ document.addEventListener('DOMContentLoaded', () => {
         btnToggle5GStabilizer.textContent = 'AKTIF ⚡';
         btnToggle5GStabilizer.classList.add('active');
         stabilizer5GLogBox.style.display = 'block';
-        stabilizer5GLogBox.innerHTML = '<div class="log-item" style="color:#10b981;">⚡ Denyutan soket 3.5s diaktifkan untuk mengekalkan saluran radio aktif.</div>';
-        stabilizer5GTimer = setInterval(() => {
-          fetch('./manifest.json?hb=' + Date.now(), { method: 'HEAD', cache: 'no-store' }).catch(() => {});
+        stabilizer5GLogBox.innerHTML = '<div class="log-item" style="color:#10b981;">⚡ Denyutan soket 3.5s diaktifkan (jeda automatik bila skrin ditutup / luar talian).</div>';
+        stabilizer5GTimer = setInterval(async () => {
+          if (document.hidden || !navigator.onLine || stabilizerInFlight) return;
+          stabilizerInFlight = true;
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 2500);
+          try {
+            await fetch('./manifest.json?hb=' + Date.now(), {
+              method: 'HEAD',
+              cache: 'no-store',
+              signal: controller.signal
+            });
+          } catch (_) {
+            // Silent ignore on transient network blip; next interval retries cleanly
+          } finally {
+            clearTimeout(timer);
+            stabilizerInFlight = false;
+          }
         }, 3500);
       } else {
         clearInterval(stabilizer5GTimer);
         stabilizer5GTimer = null;
+        stabilizerInFlight = false;
         btnToggle5GStabilizer.textContent = 'MATI';
         btnToggle5GStabilizer.classList.remove('active');
         stabilizer5GLogBox.style.display = 'none';
@@ -1494,12 +1739,55 @@ document.addEventListener('DOMContentLoaded', () => {
   const signalCalibrateLogBox = document.getElementById('signalCalibrateLogBox');
   if (btnCalibrateSignal) {
     btnCalibrateSignal.addEventListener('click', async () => {
+      btnCalibrateSignal.disabled = true;
       signalCalibrateLogBox.style.display = 'block';
-      const rtt = await measureLivePing();
+      signalCalibrateLogBox.innerHTML = '<div class="log-item">⏳ Mengukur jitter 3-sampel &amp; mencari pelayan DNS DoH terpantas...</div>';
+
+      const rttSamples = [];
+      for (let i = 0; i < 3; i++) {
+        const ms = await measureLivePing();
+        if (ms !== null) rttSamples.push(ms);
+      }
+
+      let rttSummary = 'Luar Talian (Tiada sambungan rangkaian)';
+      if (rttSamples.length > 0) {
+        const avgRtt = Math.round(rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length);
+        const jitter = Math.max(...rttSamples) - Math.min(...rttSamples);
+        rttSummary = `Purata ${avgRtt} ms | Jitter ${jitter} ms (${rttSamples.join(' / ')} ms)`;
+      }
+
+      const dohResults = await probeDohResolvers(3500);
+      const fastest = dohResults
+        .filter((r) => r.ok && r.elapsed !== null)
+        .sort((a, b) => a.elapsed - b.elapsed)[0];
+
+      const dnsBlockHtml = fastest
+        ? `<div class="log-item" style="color:#38bdf8;">🏆 <strong>DNS Terpantas Dikesan:</strong> ${escapeHtml(fastest.name)} (${fastest.elapsed} ms)</div>
+           <div class="log-item"><button type="button" class="btn-action" id="btnCopyFastestDns" style="margin-top:4px;">📋 Salin Hostname Private DNS (${escapeHtml(fastest.host)})</button></div>`
+        : '<div class="log-item" style="color:#f59e0b;">⚠️ Pelayan DoH luar tidak dapat dicapai (mod luar talian).</div>';
+
+      await refreshRealTelemetry();
       signalCalibrateLogBox.innerHTML = `
-        <div class="log-item" style="color:#10b981; font-weight:700;">✅ Soket Disegarkan (RTT Semasa: ${rtt !== null ? rtt + ' ms' : 'Luar Talian'})</div>
-        <div class="log-item"><strong>Panduan Reset Baseband Menara (BTS):</strong> Hidupkan Airplane Mode selama 5 saat dan matikan semula untuk memaksa modem merundingkan semula saluran frekuensi terpantas.</div>
+        <div class="log-item" style="color:#10b981; font-weight:700;">🚀 Kalibrasi Isyarat &amp; DNS Selesai</div>
+        <div class="log-item">• <strong>RTT &amp; Jitter Sebenar:</strong> ${escapeHtml(rttSummary)}</div>
+        ${dnsBlockHtml}
+        <div class="log-item"><strong>Panduan Reset Baseband Menara (BTS):</strong> Hidupkan <em>Airplane Mode</em> 5 saat lalu matikan semula untuk memaksa modem merundingkan saluran frekuensi baharu (PWA tidak boleh ubah kuasa antena fizikal OS).</div>
       `;
+
+      const btnCopyFastestDns = document.getElementById('btnCopyFastestDns');
+      if (btnCopyFastestDns && fastest) {
+        btnCopyFastestDns.addEventListener('click', async () => {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(fastest.host);
+              btnCopyFastestDns.textContent = `✅ Disalin: ${fastest.host}`;
+            }
+          } catch (_) {
+            alert('Salin manual hostname: ' + fastest.host);
+          }
+        });
+      }
+      btnCalibrateSignal.disabled = false;
     });
   }
 
@@ -1507,7 +1795,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 14. Forensic Report Exporter (NSRC 997 / MyCERT) & Share Target
   // ========================================================
   function generateForensicReportText() {
-    const logs = JSON.parse(localStorage.getItem(FORENSIC_KEY) || '[]');
+    const logs = safeReadForensicLogs();
     const lines = [
       '====================================================',
       'LAPORAN BUKTI FORENSIK SIBER — AEGIS MOBILE ULTIMATE v3.0',
@@ -1644,7 +1932,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderThreatModalList() {
     if (!threatModalList) return;
-    const logs = JSON.parse(localStorage.getItem(FORENSIC_KEY) || '[]');
+    const logs = safeReadForensicLogs();
 
     if (logs.length === 0) {
       threatModalList.innerHTML = `

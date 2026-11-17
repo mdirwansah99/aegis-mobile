@@ -1,5 +1,5 @@
-// AegisMobile Ultimate v3.0 (PERISAI Standard) - Hardened Offline-First Service Worker
-const CACHE_NAME = 'aegis-ultimate-v3.4-hardened';
+// AegisMobile Ultimate v3.5 (PERISAI Standard) - Hardened Offline-First Service Worker
+const CACHE_NAME = 'aegis-ultimate-v3.5-perisai';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
+const CACHEABLE_PATHS = new Set(ASSETS.map((p) => new URL(p, self.location.href).pathname));
 
 const ALLOWED_MIME_PREFIXES = [
   'text/html',
@@ -47,10 +48,12 @@ self.addEventListener('fetch', (event) => {
   const reqUrl = new URL(event.request.url);
   if (reqUrl.origin !== self.location.origin) return;
 
+  const isStaticAsset = CACHEABLE_PATHS.has(reqUrl.pathname) && !reqUrl.search;
+
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+        if (isStaticAsset && networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
           const contentType = (networkResponse.headers.get('content-type') || '').toLowerCase();
           const mimeSafe = ALLOWED_MIME_PREFIXES.some((prefix) => contentType.startsWith(prefix));
           if (mimeSafe) {
@@ -63,7 +66,7 @@ self.addEventListener('fetch', (event) => {
         return networkResponse;
       })
       .catch(() => {
-        return caches.match(event.request).then((cachedResponse) => {
+        return caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
           return cachedResponse || caches.match('./index.html');
         });
       })

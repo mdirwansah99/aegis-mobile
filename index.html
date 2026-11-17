@@ -39,7 +39,7 @@
     <!-- ========================================== -->
     <div id="tab-dashboard" class="tab-content active">
       <div class="top-bar-status">
-        <span id="ed25519Status" style="color:#10b981; font-weight:700;">🔒 Enjin Bloom + SHA-256 Aktif</span>
+        <span id="ed25519Status" style="color:#f59e0b; font-weight:700;">⏳ Menyemak Integriti Enjin...</span>
         <button id="btnForceUpdate" class="btn-mini-reset">🔄 Kemaskini</button>
       </div>
 
@@ -80,16 +80,16 @@
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <h3 class="card-title" style="margin:0;">🛡️ Pangkalan Data Ancaman Tempatan (Offline-First)</h3>
-          <span class="pill-tag" id="feedSignBadge">TERSAH SHA-256</span>
+          <span class="pill-tag" id="feedSignBadge">MENYEMAK...</span>
         </div>
-        <p class="card-desc">Berfungsi 100% tanpa internet menggunakan penapis Bloom padat & heuristik trojan tempatan.</p>
-        <div class="status-grid">
-          <div class="status-badge-item"><span>✅</span> Pembedah Binari APK/DEX</div>
-          <div class="status-badge-item"><span>✅</span> Anti-Phishing & Homograf</div>
-          <div class="status-badge-item"><span>✅</span> Pengimbas QR Kamera/Fail</div>
-          <div class="status-badge-item"><span>✅</span> Semakan Bocor k-Anonymity</div>
-          <div class="status-badge-item"><span>✅</span> Pengesan Kebocoran WebRTC</div>
-          <div class="status-badge-item"><span>✅</span> Eksport Bukti NSRC 997</div>
+        <p class="card-desc">Berfungsi dalam sandbox pelayar menggunakan penapis Bloom padat & heuristik tempatan (pelengkap kepada Play Protect / antivirus OS).</p>
+        <div class="status-grid" id="capabilityGrid">
+          <div class="status-badge-item" id="capApk"><span>⏳</span> Pembedah Binari APK/DEX</div>
+          <div class="status-badge-item" id="capPhish"><span>🔹</span> Anti-Phishing & Homograf</div>
+          <div class="status-badge-item" id="capQr"><span>⏳</span> Pengimbas QR Kamera/Fail</div>
+          <div class="status-badge-item" id="capBreach"><span>⏳</span> Semakan Bocor k-Anonymity</div>
+          <div class="status-badge-item" id="capWebrtc"><span>⏳</span> Pengesan Kebocoran WebRTC</div>
+          <div class="status-badge-item" id="capExport"><span>🔹</span> Eksport Bukti NSRC 997</div>
         </div>
       </div>
 
@@ -212,11 +212,11 @@
         <div id="dupPreviewContainer" class="dup-preview-grid"></div>
       </div>
 
-      <!-- 3. Safe Cache & Session Purger -->
+      <!-- 3. Safe Cache & Junk Purger -->
       <div class="card">
-        <h3 class="card-title">🧹 Pembersih Penimbal & Sisa Sesi Selamat</h3>
-        <p class="card-desc">Kosongkan cache usang dan sisa sesi pelayar sambil mengekalkan pangkalan data keselamatan Aegis anda.</p>
-        <button class="btn-action btn-danger" id="btnClearCache">Cuci Sisa Cache Sekarang</button>
+        <h3 class="card-title">🧹 Buang Sampah Cache, Log Usang & Penimbal Selamat</h3>
+        <p class="card-desc">Cuci cache lama, kunci simpanan yatim Aegis, dan penimbal objek tanpa memadam rekod forensik atau data laman lain. Lapor ruang sebenar yang dijimatkan.</p>
+        <button class="btn-action btn-danger" id="btnClearCache">🧹 Buang Sampah &amp; Cuci Cache Sekarang</button>
         <div class="log-box" id="cacheLogBox"></div>
       </div>
     </div>
@@ -236,12 +236,12 @@
         <div class="log-box" id="wakeLockLogBox"></div>
       </div>
 
-      <!-- Real Storage & Memory Diagnostics -->
+      <!-- Real Storage & Memory Booster -->
       <div class="card">
-        <h3 class="card-title">📊 Diagnostik Memori & Kuota Storan Sebenar</h3>
-        <p class="card-desc">Bacaan sebenar penggunaan memori heap JavaScript dan peruntukan storan peranti melalui `navigator.storage.estimate()`.</p>
+        <h3 class="card-title">🚀 Boost RAM Pelayar &amp; Diagnostik Memori Sebenar</h3>
+        <p class="card-desc">Lepaskan penimbal objek JS, Blob URL imej, pemegang fail, dan aliran kamera terbiar dalam sandbox PWA. Lapor perubahan heap memori sebenar tanpa angka rekaan.</p>
         <button class="btn-boost-master" id="btnRunRamBoost">
-          Imbas Memori & Bebaskan Penimbal Objek
+          🚀 Boost RAM &amp; Lepas Penimbal Sekarang
         </button>
         <div class="log-box" id="ramLogBox"></div>
       </div>
@@ -303,16 +303,16 @@
         <div class="log-box" id="dnsLogBox"></div>
       </div>
 
-      <!-- Active Socket Keep-Alive & Baseband Guide -->
+      <!-- Active Socket Keep-Alive & Signal Booster -->
       <div class="card">
-        <h3 class="card-title">🚀 Penstabil Soket Aktif (Anti-Idle Radio Drop)</h3>
-        <p class="card-desc">Menghantar denyutan mikro berkala untuk menghalang radio selular daripada jatuh ke mod tidur semasa sesi kritikal.</p>
+        <h3 class="card-title">🚀 Signal Booster, Penala DNS &amp; Anti-Idle Radio</h3>
+        <p class="card-desc">Menghantar denyutan mikro berkala (jeda automatik di latar belakang) dan memilih DNS keselamatan terpantas untuk mengurangkan kependaman sambungan.</p>
         <div class="toggle-row" style="margin-bottom:10px;">
           <span style="font-size:13px; font-weight:600;">Denyutan Anti-Idle Radio:</span>
           <button class="btn-toggle" id="btnToggle5GStabilizer">MATI</button>
         </div>
         <button class="btn-boost-master" id="btnCalibrateSignal">
-          ⚡ Segarkan Soket & Panduan Reset Menara (BTS)
+          🚀 Signal Booster: Uji Jitter &amp; Pilih DNS Terpantas
         </button>
         <div class="log-box" id="signalCalibrateLogBox"></div>
         <div class="log-box" id="stabilizer5GLogBox"></div>
