@@ -1,5 +1,5 @@
-// AegisMobile Ultimate v3.5 (PERISAI Standard) - Hardened Offline-First Service Worker
-const CACHE_NAME = 'aegis-ultimate-v3.5-perisai';
+// AegisMobile Ultimate v3.6 (PERISAI Standard) - Hardened Offline-First Service Worker
+const CACHE_NAME = 'aegis-ultimate-v3.6-doh';
 const ASSETS = [
   './',
   './index.html',

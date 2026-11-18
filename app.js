@@ -1403,7 +1403,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.caches) {
           const keys = await caches.keys();
           for (const key of keys) {
-            if (key !== 'aegis-ultimate-v3.5-perisai') {
+            if (key !== 'aegis-ultimate-v3.6-doh') {
               await caches.delete(key);
               deletedCaches++;
             } else {
@@ -1626,45 +1626,78 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Shared DNS-over-HTTPS (DoH) Probe with AbortController & honest error reporting
+  // Shared DNS-over-HTTPS (DoH) Probe: parallel execution, port-443 Quad9 wireformat, direct IP fallbacks
   const DOH_RESOLVERS = [
-    { name: 'Cloudflare DoH (1.1.1.1)', host: '1dot1dot1dot1.cloudflare-dns.com', url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A' },
-    { name: 'Quad9 Threat-Block (9.9.9.9)', host: 'dns.quad9.net', url: 'https://dns.quad9.net:5053/dns-query?name=example.com&type=A' },
-    { name: 'Google Public DoH (8.8.8.8)', host: 'dns.google', url: 'https://dns.google/resolve?name=example.com&type=A' }
+    {
+      name: 'Cloudflare DoH (1.1.1.1)',
+      host: '1dot1dot1dot1.cloudflare-dns.com',
+      endpoints: [
+        { url: 'https://cloudflare-dns.com/dns-query?name=example.com&type=A', accept: 'application/dns-json' },
+        { url: 'https://1.1.1.1/dns-query?name=example.com&type=A', accept: 'application/dns-json' }
+      ]
+    },
+    {
+      name: 'Quad9 Threat-Block (9.9.9.9)',
+      host: 'dns.quad9.net',
+      endpoints: [
+        { url: 'https://dns.quad9.net/dns-query?dns=AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE', accept: 'application/dns-message' }
+      ]
+    },
+    {
+      name: 'Google Public DoH (8.8.8.8)',
+      host: 'dns.google',
+      endpoints: [
+        { url: 'https://dns.google/resolve?name=example.com&type=A', accept: 'application/dns-json' },
+        { url: 'https://8.8.8.8/resolve?name=example.com&type=A', accept: 'application/dns-json' }
+      ]
+    }
   ];
 
-  async function probeDohResolvers(timeoutMs = 3500) {
-    if (!navigator.onLine) {
-      return DOH_RESOLVERS.map((t) => ({ ...t, ok: false, elapsed: null, status: 'Luar Talian' }));
+  async function probeSingleEndpoint(url, accept, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const start = performance.now();
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: accept },
+        cache: 'no-store',
+        mode: 'cors',
+        signal: controller.signal
+      });
+      const elapsed = Math.round(performance.now() - start);
+      if (!res.ok) return { ok: false, elapsed, status: `HTTP ${res.status}` };
+      return { ok: true, elapsed, status: 'Aktif' };
+    } catch (err) {
+      const elapsed = Math.round(performance.now() - start);
+      if (err && err.name === 'AbortError') return { ok: false, elapsed, status: 'Tamat Masa' };
+      if (!navigator.onLine) return { ok: false, elapsed, status: 'Luar Talian' };
+      const msg = err && err.message ? String(err.message).slice(0, 32) : 'Disekat';
+      return { ok: false, elapsed, status: `Gagal (${msg})` };
+    } finally {
+      clearTimeout(timer);
     }
-    const results = [];
-    for (const target of DOH_RESOLVERS) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const start = performance.now();
-      try {
-        const res = await fetch(target.url, {
-          method: 'GET',
-          headers: { Accept: 'application/dns-json' },
-          cache: 'no-store',
-          mode: 'cors',
-          signal: controller.signal
-        });
-        const elapsed = Math.round(performance.now() - start);
-        if (!res.ok) {
-          results.push({ ...target, ok: false, elapsed, status: `Ralat HTTP ${res.status}` });
-        } else {
-          results.push({ ...target, ok: true, elapsed, status: 'Aktif' });
+  }
+
+  async function probeDohResolvers(timeoutMs = 6000) {
+    return Promise.all(
+      DOH_RESOLVERS.map(async (target) => {
+        let lastOutcome = { ok: false, elapsed: null, status: 'Gagal' };
+        for (let i = 0; i < target.endpoints.length; i++) {
+          const ep = target.endpoints[i];
+          const outcome = await probeSingleEndpoint(ep.url, ep.accept, timeoutMs);
+          lastOutcome = outcome;
+          if (outcome.ok) {
+            return {
+              ...target,
+              ...outcome,
+              status: i > 0 ? 'Aktif (IP Terus)' : 'Aktif'
+            };
+          }
         }
-      } catch (err) {
-        const elapsed = Math.round(performance.now() - start);
-        const reason = err && err.name === 'AbortError' ? 'Tamat Masa' : 'Gagal / Disekat';
-        results.push({ ...target, ok: false, elapsed, status: reason });
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-    return results;
+        return { ...target, ...lastOutcome };
+      })
+    );
   }
 
   // DNS-over-HTTPS (DoH) Benchmark
@@ -1674,9 +1707,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnRunDnsPing) {
     btnRunDnsPing.addEventListener('click', async () => {
       dnsLogBox.style.display = 'block';
-      dnsLogBox.innerHTML = '<div class="log-item">⏳ Menguji kependaman &amp; resolusi terenkripsi DoH...</div>';
+      dnsLogBox.innerHTML = '<div class="log-item">⏳ Menguji kependaman &amp; resolusi terenkripsi DoH secara selari...</div>';
 
-      const results = await probeDohResolvers(3500);
+      const results = await probeDohResolvers(6000);
       const resultsHtml = results
         .map((r) => {
           const color = r.ok ? '#10b981' : '#f43f5e';
@@ -1756,7 +1789,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rttSummary = `Purata ${avgRtt} ms | Jitter ${jitter} ms (${rttSamples.join(' / ')} ms)`;
       }
 
-      const dohResults = await probeDohResolvers(3500);
+      const dohResults = await probeDohResolvers(6000);
       const fastest = dohResults
         .filter((r) => r.ok && r.elapsed !== null)
         .sort((a, b) => a.elapsed - b.elapsed)[0];
